@@ -575,6 +575,24 @@ function handleInput() {
   // Get world-space mouse position for all game interactions
   const worldMouse = screenToWorld(input.mousePos);
 
+  // HUD bar button clicks work in ALL modes (including executing)
+  if (input.justPressed) {
+    const hudBarY2 = canvas.height - 36;
+    const W = canvas.width;
+    if (input.mousePos.y > hudBarY2) {
+      const cy2 = hudBarY2 + 5;
+      if (hitBtn(input.mousePos, W / 2 - 40, cy2, 80, 26)) {
+        if (state.mode === 'planning') doGo();
+        else if (state.mode === 'executing') { state.mode = 'paused'; }
+        else if (state.mode === 'paused') { state.mode = 'executing'; }
+      }
+      else if (hitBtn(input.mousePos, W / 2 + 50, cy2, 60, 26)) doReset();
+      else if (hitBtn(input.mousePos, W / 2 - 110, cy2, 60, 26)) show('menu');
+      else if (hitBtn(input.mousePos, W - 56, cy2, 48, 26)) doExport();
+      return; // always consume clicks in HUD bar
+    }
+  }
+
   if (state.mode === 'executing') return;
   const inter = state.interaction;
 
@@ -766,24 +784,7 @@ function handleInput() {
       }
     }
     
-    // HUD bar button hit test (screen-space)
-    {
-      const hudBarY2 = canvas.height - 36;
-      const W = canvas.width;
-      if (input.mousePos.y > hudBarY2) {
-        // Check each button region
-        const cy2 = hudBarY2 + 5;
-        if (hitBtn(input.mousePos, W / 2 - 40, cy2, 80, 26)) {
-          if (state.mode === 'planning') doGo();
-          else if (state.mode === 'executing') { state.mode = 'paused'; }
-          else if (state.mode === 'paused') { state.mode = 'executing'; }
-        }
-        else if (hitBtn(input.mousePos, W / 2 + 50, cy2, 60, 26)) doReset();
-        else if (hitBtn(input.mousePos, W / 2 - 110, cy2, 60, 26)) show('menu');
-        else if (hitBtn(input.mousePos, W - 56, cy2, 48, 26)) doExport();
-        return; // always consume clicks in HUD bar
-      }
-    }
+    // HUD bar clicks already handled above
 
     // All game-world hit tests use worldMouse
     const selOp = state.operators.find(o => o.id === state.selectedOpId && o.deployed);
