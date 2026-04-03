@@ -152,6 +152,7 @@ const state: GameState = {
   interaction: { type: 'idle' }, popup: null,
   camera: { x: 0, y: 0, zoom: 1 },
   isPanning: false, panStart: { x: 0, y: 0 }, panCamStart: { x: 0, y: 0 },
+  hoveredHudBtn: null,
 };
 
 // ---- Build state ----
@@ -252,7 +253,7 @@ function tryMerge(
 }
 
 // ---- Door slot helpers ----
-const DOOR_SLOT_SPACING = 40;
+const DOOR_SLOT_SPACING = 20;
 
 function getDoorSlots(w: { a: Vec2; b: Vec2 }): number[] {
   const dx = w.b.x - w.a.x, dy = w.b.y - w.a.y;
@@ -1187,8 +1188,7 @@ function drawBuildWall(ctx: CanvasRenderingContext2D, w: { a: Vec2; b: Vec2; has
       ctx.strokeStyle = '#5a8a5a'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(dsx + nx * 6, dsy + ny * 6); ctx.lineTo(dsx - nx * 6, dsy - ny * 6); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(dex + nx * 6, dey + ny * 6); ctx.lineTo(dex - nx * 6, dey - ny * 6); ctx.stroke();
-      ctx.fillStyle = 'rgba(90,138,90,0.6)'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('OPEN', (a.x + b.x) / 2, (a.y + b.y) / 2);
+      // no label text for open doors
     } else {
       // Closed: door panel across gap
       ctx.strokeStyle = '#8a6a3a'; ctx.lineWidth = 4;
@@ -1198,8 +1198,7 @@ function drawBuildWall(ctx: CanvasRenderingContext2D, w: { a: Vec2; b: Vec2; has
       ctx.beginPath(); ctx.moveTo(dex + nx * 6, dey + ny * 6); ctx.lineTo(dex - nx * 6, dey - ny * 6); ctx.stroke();
       ctx.fillStyle = '#c0a060'; ctx.beginPath();
       ctx.arc((dsx + dex) / 2 + nx * 3, (dsy + dey) / 2 + ny * 3, 2.5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = 'rgba(138,106,58,0.6)'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('DOOR', (a.x + b.x) / 2, (a.y + b.y) / 2 - 12);
+      // no label text for closed doors
     }
   } else {
     // Regular wall: outline + fill

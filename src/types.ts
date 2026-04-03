@@ -42,6 +42,8 @@ export interface NodePopup { opId: number; wpIdx: number; position: Vec2; }
 
 export interface Camera { x: number; y: number; zoom: number; }
 
+export type HudBtn = 'go' | 'reset' | 'menu' | 'gif' | null;
+
 export interface GameState {
   screen: AppScreen; mode: GameMode; room: Room;
   operators: Operator[];
@@ -53,6 +55,7 @@ export interface GameState {
   isPanning: boolean;
   panStart: Vec2;
   panCamStart: Vec2;
+  hoveredHudBtn: HudBtn;
 }
 
 export function makeWaypoint(pos: Vec2): Waypoint {
