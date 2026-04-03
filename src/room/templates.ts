@@ -56,3 +56,90 @@ export const ROOM_TEMPLATES = {
   'L-Shape': lShapeRoom, 'T-Shape': tShapeRoom, 'Simple Box': simpleRoom,
 } as const;
 export type RoomTemplateName = keyof typeof ROOM_TEMPLATES;
+
+// ---- Stamp templates: generate walls for an arbitrary bounding box ----
+import type { WallSegment } from '../types';
+
+/** Generate "Simple Box" walls fitted to the given rect */
+function stampBox(x: number, y: number, w: number, h: number): WallSegment[] {
+  return [
+    makeWall(x, y, x + w, y), makeWall(x + w, y, x + w, y + h),
+    makeWall(x + w, y + h, x, y + h), makeWall(x, y + h, x, y),
+  ];
+}
+
+/** Generate "Corner Fed" walls: box with door gap in bottom-left area */
+function stampCornerFed(x: number, y: number, w: number, h: number): WallSegment[] {
+  const dw = Math.min(40, w * 0.15);
+  const dpos = w * 0.25;
+  return [
+    makeWall(x, y, x + w, y), makeWall(x + w, y, x + w, y + h),
+    makeWall(x, y + h, x + dpos - dw / 2, y + h),
+    makeWall(x + dpos + dw / 2, y + h, x + w, y + h),
+    makeWall(x + dpos - dw / 2, y + h, x + dpos + dw / 2, y + h, true, 0.5),
+    makeWall(x, y, x, y + h),
+  ];
+}
+
+/** Generate "Center Fed" walls: box with door gap centered on bottom */
+function stampCenterFed(x: number, y: number, w: number, h: number): WallSegment[] {
+  const dw = Math.min(40, w * 0.15);
+  return [
+    makeWall(x, y, x + w, y), makeWall(x + w, y, x + w, y + h),
+    makeWall(x, y + h, x + w / 2 - dw / 2, y + h),
+    makeWall(x + w / 2 + dw / 2, y + h, x + w, y + h),
+    makeWall(x + w / 2 - dw / 2, y + h, x + w / 2 + dw / 2, y + h, true, 0.5),
+    makeWall(x, y, x, y + h),
+  ];
+}
+
+/** Generate "L-Shape" walls fitted to the given rect */
+function stampLShape(x: number, y: number, w: number, h: number): WallSegment[] {
+  const midX = x + w * 0.55;
+  const midY = y + h * 0.5;
+  const dw = Math.min(40, w * 0.12);
+  const dpos = x + (midX - x) * 0.5;
+  return [
+    makeWall(x, y, x + w, y),                        // top full
+    makeWall(x + w, y, x + w, midY),                  // right upper
+    makeWall(x + w, midY, midX, midY),                 // inner horizontal
+    makeWall(midX, midY, midX, y + h),                 // inner vertical
+    makeWall(x, y + h, dpos - dw / 2, y + h),         // bottom left
+    makeWall(dpos + dw / 2, y + h, midX, y + h),      // bottom right
+    makeWall(dpos - dw / 2, y + h, dpos + dw / 2, y + h, true, 0.5), // door
+    makeWall(x, y, x, y + h),                          // left
+  ];
+}
+
+/** Generate "T-Shape" walls fitted to the given rect */
+function stampTShape(x: number, y: number, w: number, h: number): WallSegment[] {
+  const armY = y + h * 0.38;
+  const stemL = x + w * 0.38;
+  const stemR = x + w * 0.62;
+  const dw = Math.min(40, w * 0.1);
+  const dpos = (stemL + stemR) / 2;
+  return [
+    makeWall(x, y, x + w, y),                         // top
+    makeWall(x, y, x, armY),                           // left side
+    makeWall(x, armY, stemL, armY),                    // inner left
+    makeWall(stemR, armY, x + w, armY),                // inner right
+    makeWall(x + w, y, x + w, armY),                   // right side
+    makeWall(stemL, armY, stemL, y + h),               // stem left
+    makeWall(stemR, armY, stemR, y + h),               // stem right
+    makeWall(stemL, y + h, dpos - dw / 2, y + h),     // bottom left
+    makeWall(dpos + dw / 2, y + h, stemR, y + h),     // bottom right
+    makeWall(dpos - dw / 2, y + h, dpos + dw / 2, y + h, true, 0.5), // door
+  ];
+}
+
+export type StampName = 'Simple Box' | 'Corner Fed' | 'Center Fed' | 'L-Shape' | 'T-Shape';
+
+export const STAMP_TEMPLATES: Record<StampName, (x: number, y: number, w: number, h: number) => WallSegment[]> = {
+  'Simple Box': stampBox,
+  'Corner Fed': stampCornerFed,
+  'Center Fed': stampCenterFed,
+  'L-Shape': stampLShape,
+  'T-Shape': stampTShape,
+};
+
+export const STAMP_NAMES: StampName[] = ['Simple Box', 'Corner Fed', 'Center Fed', 'L-Shape', 'T-Shape'];

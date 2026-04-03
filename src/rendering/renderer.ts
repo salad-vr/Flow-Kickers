@@ -1,5 +1,5 @@
 import type { GameState, Operator, Room, WallSegment, ThreatMarker, NodePopup, Camera } from '../types';
-import { WALL_W, OP_R, THREAT_R, GRID, DOOR_W, C, NODE_R, DEPLOY_PANEL_W } from '../types';
+import { WALL_W, OP_R, THREAT_R, GRID, DOOR_W, C, NODE_R, DEPLOY_PANEL_H, DEPLOY_OP_SPACING } from '../types';
 import { getWallsForCollision } from '../room/room';
 import { computeOperatorFOV } from '../operator/visibility';
 import type { Vec2 } from '../math/vec2';
@@ -249,25 +249,52 @@ function drawDeployPanel(ctx: CanvasRenderingContext2D, state: GameState, H: num
   const undeployed = state.operators.filter(o => !o.deployed);
   if (undeployed.length === 0) return;
 
-  // Panel background
+  const hudBarY = H - 36;
+  const barY = hudBarY - DEPLOY_PANEL_H - 4;
+  const barW = 20 + undeployed.length * DEPLOY_OP_SPACING;
+  const barH = DEPLOY_PANEL_H;
+  const deployY = barY + barH / 2;
+
+  // Background
   ctx.fillStyle = C.panelBg;
-  ctx.fillRect(0, 40, DEPLOY_PANEL_W, Math.min(undeployed.length * 36 + 40, H - 100));
-  ctx.strokeStyle = C.panelBorder; ctx.lineWidth = 1;
-  ctx.strokeRect(0, 40, DEPLOY_PANEL_W, Math.min(undeployed.length * 36 + 40, H - 100));
+  ctx.fillRect(8, barY, barW, barH);
 
-  ctx.fillStyle = C.hudText; ctx.font = '8px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  ctx.fillText('DEPLOY', DEPLOY_PANEL_W / 2, 46);
+  // Dotted border
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 4]);
+  ctx.strokeRect(8, barY, barW, barH);
+  ctx.setLineDash([]);
 
+  // Label above
+  ctx.fillStyle = C.hudText; ctx.font = '9px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText('DRAG OPERATORS INTO PLACE', 12, barY - 4);
+
+  // Operators in a horizontal row facing right
   for (let i = 0; i < undeployed.length; i++) {
     const op = undeployed[i];
-    const y = 80 + i * 36;
-    // Draw small operator icon
+    const ox = 30 + i * DEPLOY_OP_SPACING;
+
     ctx.save();
-    ctx.translate(DEPLOY_PANEL_W / 2, y);
-    ctx.fillStyle = C.opBody; ctx.strokeStyle = op.color; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.translate(ox, deployY);
+    ctx.rotate(0); // facing right
+
+    // Draw chevron shape (same as game operator but slightly larger for grab-ability)
+    const r = OP_R + 2;
+    const tip = r + 3, back = -r + 1, side = r - 1, notch = -r * 0.25;
+    ctx.beginPath();
+    ctx.moveTo(tip, 0);
+    ctx.lineTo(back, -side);
+    ctx.lineTo(notch, 0);
+    ctx.lineTo(back, side);
+    ctx.closePath();
+    ctx.fillStyle = C.opBody;
+    ctx.fill();
+    ctx.strokeStyle = op.color; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.strokeStyle = C.opOutline; ctx.lineWidth = 0.8; ctx.stroke();
+
+    // Label
     ctx.fillStyle = '#fff'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(op.label, 0, 0);
+    ctx.fillText(op.label, -1, 0);
     ctx.restore();
   }
 }
@@ -333,9 +360,9 @@ function drawPopup(ctx: CanvasRenderingContext2D, popup: NodePopup, state: GameS
   const p = popup.position;
 
   const items = isOp
-    ? ['Clear Path', 'Speed']
-    : ['Hold', 'Look At', 'Speed', 'Delete', 'Redraw'];
-  const iw = 64, ih = 24, gap = 4;
+    ? ['Draw Path', 'Speed', 'Clear Path']
+    : ['Hold', 'Look At', 'Speed', 'Delete'];
+  const iw = 70, ih = 24, gap = 4;
   const totalH = items.length * (ih + gap) - gap;
   const px = p.x + 20, py = p.y - totalH / 2;
 

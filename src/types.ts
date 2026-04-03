@@ -60,8 +60,9 @@ export function makeWaypoint(pos: Vec2): Waypoint {
 }
 
 export const C = {
-  bg: '#0c1525', floor: '#2a3552', grid: 'rgba(232,223,198,0.03)',
-  wall: '#1e3352', wallEdge: '#0c1525', doorOpen: '#4a6040', doorClosed: '#2a3530',
+  bg: '#0c1525', floor: '#d4c9a8', floorLine: 'rgba(0,0,0,0.06)', grid: 'rgba(0,0,0,0.04)',
+  wall: '#1e3352', wallEdge: '#0c1525', wallInner: '#3a2a1a', wallInnerEdge: '#1a1208',
+  doorOpen: '#4a6040', doorClosed: '#2a3530',
   threat: '#cc4433', threatDead: '#3a3a44', threatGlow: 'rgba(200,60,50,0.2)',
   opColors: ['#5588cc','#cc7744','#55aa66','#aa55aa','#ccaa44','#55aaaa'],
   opBody: '#c8bb96', opBodyGrey: '#666', opOutline: '#0c1525',
@@ -85,4 +86,5 @@ export const THREAT_R = 7;
 export const NEUTRALIZE_T = 0.3;
 export const PATH_SIMP = 8;
 export const NODE_R = 5;
-export const DEPLOY_PANEL_W = 50;
+export const DEPLOY_PANEL_H = 56;  // height of deploy bar at bottom-left
+export const DEPLOY_OP_SPACING = 40; // horizontal spacing between deploy ops

@@ -1,10 +1,10 @@
 import './style.css';
 import type { GameState, Operator, Interaction, NodePopup, Room } from './types';
 import type { Vec2 } from './math/vec2';
-import { C, OP_R, NODE_R, DEPLOY_PANEL_W, GRID, DOOR_W, WALL_W, makeWaypoint } from './types';
+import { C, OP_R, NODE_R, DEPLOY_PANEL_H, DEPLOY_OP_SPACING, GRID, DOOR_W, WALL_W, makeWaypoint } from './types';
 import { startGameLoop } from './core/gameLoop';
 import { initInput, getInput, clearFrameInput } from './core/inputManager';
-import { ROOM_TEMPLATES, type RoomTemplateName } from './room/templates';
+import { ROOM_TEMPLATES, type RoomTemplateName, STAMP_TEMPLATES, STAMP_NAMES, type StampName } from './room/templates';
 import { createOperator, createDeployedOperator, resetOperatorId, resetOperator } from './operator/operator';
 import { rebuildPathLUT } from './operator/pathFollower';
 import { distance, copy, distToSegment, closestPointOnSegment } from './math/vec2';
@@ -89,6 +89,10 @@ app.innerHTML = `
           <button class="build-tool" data-tool="entry"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M10 3L10 13M6 9L10 13L14 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="4" y1="17" x2="16" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div><span>Entry</span><kbd>6</kbd></button>
         </div>
       </div>
+      <div class="build-tools-section">
+        <label class="menu-label">ROOM STAMPS</label>
+        <div class="build-stamps-grid" id="build-stamps"></div>
+      </div>
       <div class="build-divider"></div>
       <div class="build-tools-section">
         <label class="menu-label">OPERATORS</label>
@@ -152,8 +156,9 @@ const state: GameState = {
 
 // ---- Build state ----
 let customRoom: Room = createEmptyRoom();
-type BuildToolType = 'line' | 'square' | 'delete' | 'door' | 'threat' | 'entry';
+type BuildToolType = 'line' | 'square' | 'delete' | 'door' | 'threat' | 'entry' | 'room';
 let buildTool: BuildToolType = 'line';
+let buildSelectedStamp: StampName = 'Simple Box';
 let buildDragStart: Vec2 | null = null;
 let buildDragEnd: Vec2 | null = null;
 let buildMousePos: Vec2 = { x: 0, y: 0 };
@@ -322,9 +327,33 @@ document.querySelectorAll('.build-tool').forEach(btn => {
   btn.addEventListener('click', () => {
     buildTool = (btn as HTMLElement).dataset.tool as BuildToolType;
     document.querySelectorAll('.build-tool').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.build-stamp-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
   });
 });
+
+// Stamp template buttons
+const stampsEl = document.getElementById('build-stamps')!;
+const STAMP_SVG: Record<string, string> = {
+  'Simple Box': '<svg viewBox="0 0 32 24"><rect x="2" y="2" width="28" height="20" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
+  'Corner Fed': '<svg viewBox="0 0 32 24"><rect x="2" y="2" width="28" height="20" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".5"/><line x1="2" y1="22" x2="9" y2="22" stroke="currentColor" stroke-width="1.5"/><line x1="15" y1="22" x2="30" y2="22" stroke="currentColor" stroke-width="1.5"/></svg>',
+  'Center Fed': '<svg viewBox="0 0 32 24"><rect x="2" y="2" width="28" height="20" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".5"/><line x1="2" y1="22" x2="12" y2="22" stroke="currentColor" stroke-width="1.5"/><line x1="20" y1="22" x2="30" y2="22" stroke="currentColor" stroke-width="1.5"/></svg>',
+  'L-Shape': '<svg viewBox="0 0 32 24"><path d="M2 2h28v10H18v10H2V2z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
+  'T-Shape': '<svg viewBox="0 0 32 24"><path d="M2 2h28v8H22v12H10V10H2V2z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
+};
+for (const name of STAMP_NAMES) {
+  const btn = document.createElement('button');
+  btn.className = 'build-stamp-btn';
+  btn.innerHTML = `<div class="build-stamp-icon">${STAMP_SVG[name] || ''}</div><span>${name}</span>`;
+  btn.onclick = () => {
+    buildTool = 'room';
+    buildSelectedStamp = name;
+    document.querySelectorAll('.build-tool').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.build-stamp-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  };
+  stampsEl.appendChild(btn);
+}
 
 // Share codes
 document.getElementById('build-export')!.onclick = () => {
@@ -531,6 +560,10 @@ function handleCamera() {
   }
 }
 
+function hitBtn(mouse: Vec2, x: number, y: number, w: number, h: number): boolean {
+  return mouse.x >= x && mouse.x <= x + w && mouse.y >= y && mouse.y <= y + h;
+}
+
 // ---- Input ----
 function handleInput() {
   const input = getInput();
@@ -546,6 +579,57 @@ function handleInput() {
   const inter = state.interaction;
 
   if (state.popup && input.justPressed) {
+    // Check if clicking a popup menu item
+    const pop = state.popup;
+    const op = state.operators.find(o => o.id === pop.opId);
+    const cam = state.camera;
+    const W = canvas.width, H = canvas.height;
+    const sp = { x: (pop.position.x - cam.x) * cam.zoom + W / 2, y: (pop.position.y - cam.y) * cam.zoom + H / 2 };
+    const isOp = pop.wpIdx < 0;
+    const items = isOp
+      ? ['Draw Path', 'Speed', 'Clear Path']
+      : ['Hold', 'Look At', 'Speed', 'Delete'];
+    const iw = 70, ih = 24, gap = 4;
+    const totalH = items.length * (ih + gap) - gap;
+    const px = sp.x + 22, py = sp.y - totalH / 2;
+
+    let clicked = -1;
+    for (let i = 0; i < items.length; i++) {
+      const iy = py + i * (ih + gap);
+      if (hitBtn(input.mousePos, px, iy, iw, ih)) { clicked = i; break; }
+    }
+
+    if (clicked >= 0 && op) {
+      if (isOp) {
+        // Operator popup: Draw Path, Speed, Clear Path
+        if (items[clicked] === 'Draw Path') {
+          op.path.waypoints = [makeWaypoint(op.position)];
+          op.path.splineLUT = null;
+          state.interaction = { type: 'placing_waypoints', opId: op.id };
+        } else if (items[clicked] === 'Speed') {
+          state.interaction = { type: 'tempo_ring', opId: op.id, wpIdx: null, centerAngle: 0, startTempo: op.tempo };
+        } else if (items[clicked] === 'Clear Path') {
+          op.path.waypoints = [];
+          op.path.splineLUT = null;
+        }
+      } else {
+        // Node popup: Hold, Look At, Speed, Delete
+        const wp = op.path.waypoints[pop.wpIdx];
+        if (items[clicked] === 'Hold') {
+          wp.hold = !wp.hold;
+          if (wp.hold && !wp.goCode) wp.goCode = 'A';
+        } else if (items[clicked] === 'Look At') {
+          state.interaction = { type: 'setting_look_target', opId: op.id, wpIdx: pop.wpIdx };
+        } else if (items[clicked] === 'Speed') {
+          state.interaction = { type: 'tempo_ring', opId: op.id, wpIdx: pop.wpIdx, centerAngle: 0, startTempo: wp.tempo };
+        } else if (items[clicked] === 'Delete') {
+          if (op.path.waypoints.length > 2) {
+            op.path.waypoints.splice(pop.wpIdx, 1);
+            rebuildPathLUT(op);
+          }
+        }
+      }
+    }
     state.popup = null;
     return;
   }
@@ -554,7 +638,7 @@ function handleInput() {
     const op = state.operators.find(o => o.id === inter.opId);
     if (op && input.mouseDown) op.position = copy(worldMouse);
     if (input.justReleased && op) {
-      if (input.mousePos.x > DEPLOY_PANEL_W + 10) { // screen-space check for panel
+      if (true) { // deployed on release anywhere on map
         op.deployed = true;
         op.startPosition = copy(op.position);
       }
@@ -565,15 +649,27 @@ function handleInput() {
 
   if (inter.type === 'moving_op') {
     const op = state.operators.find(o => o.id === inter.opId);
-    if (op && input.mouseDown) { op.position = copy(worldMouse); op.startPosition = copy(op.position); }
-    if (input.justReleased) state.interaction = { type: 'idle' };
+    if (op && input.mouseDown && input.isDragging) {
+      op.position = copy(worldMouse);
+      op.startPosition = copy(op.position);
+    }
+    if (input.justReleased) {
+      if (!input.isDragging && op) {
+        // Short click = open popup menu on operator
+        state.popup = { opId: op.id, wpIdx: -1, position: copy(op.position) };
+      }
+      state.interaction = { type: 'idle' };
+    }
     return;
   }
 
   if (inter.type === 'placing_waypoints') {
     const op = state.operators.find(o => o.id === inter.opId);
     if (input.justPressed && op) {
-      if (input.mousePos.x < DEPLOY_PANEL_W) { state.interaction = { type: 'idle' }; return; } // screen-space
+      // check if clicking in deploy bar area - cancel waypoint placing
+      const hudBarY = canvas.height - 36;
+      const deployBarY = hudBarY - DEPLOY_PANEL_H - 4;
+      if (input.mousePos.y > deployBarY) { state.interaction = { type: 'idle' }; return; }
       op.path.waypoints.push(makeWaypoint(worldMouse));
       rebuildPathLUT(op);
     }
@@ -651,19 +747,42 @@ function handleInput() {
   }
 
   if (input.justPressed) {
-    // Deploy panel hit test (screen-space)
-    if (input.mousePos.x < DEPLOY_PANEL_W + 5) {
+    // Deploy bar hit test (screen-space) - horizontal row at bottom-left
+    {
+      const hudBarY2 = canvas.height - 36;
+      const deployY = hudBarY2 - DEPLOY_PANEL_H / 2;
       const undeployed = state.operators.filter(o => !o.deployed);
-      for (let i = 0; i < undeployed.length; i++) {
-        if (Math.abs(input.mousePos.y - (80 + i * 36)) < 16) {
-          const op = undeployed[i];
-          op.position = copy(worldMouse);
-          state.interaction = { type: 'deploying_op', opId: op.id };
-          state.selectedOpId = op.id;
-          return;
+      if (undeployed.length > 0 && input.mousePos.y > hudBarY2 - DEPLOY_PANEL_H - 8 && input.mousePos.y < hudBarY2) {
+        for (let i = 0; i < undeployed.length; i++) {
+          const opX = 30 + i * DEPLOY_OP_SPACING;
+          if (Math.abs(input.mousePos.x - opX) < 16 && Math.abs(input.mousePos.y - deployY) < 18) {
+            const op = undeployed[i];
+            op.position = copy(worldMouse);
+            state.interaction = { type: 'deploying_op', opId: op.id };
+            state.selectedOpId = op.id;
+            return;
+          }
         }
       }
-      return;
+    }
+    
+    // HUD bar button hit test (screen-space)
+    {
+      const hudBarY2 = canvas.height - 36;
+      const W = canvas.width;
+      if (input.mousePos.y > hudBarY2) {
+        // Check each button region
+        const cy2 = hudBarY2 + 5;
+        if (hitBtn(input.mousePos, W / 2 - 40, cy2, 80, 26)) {
+          if (state.mode === 'planning') doGo();
+          else if (state.mode === 'executing') { state.mode = 'paused'; }
+          else if (state.mode === 'paused') { state.mode = 'executing'; }
+        }
+        else if (hitBtn(input.mousePos, W / 2 + 50, cy2, 60, 26)) doReset();
+        else if (hitBtn(input.mousePos, W / 2 - 110, cy2, 60, 26)) show('menu');
+        else if (hitBtn(input.mousePos, W - 56, cy2, 48, 26)) doExport();
+        return; // always consume clicks in HUD bar
+      }
     }
 
     // All game-world hit tests use worldMouse
@@ -694,22 +813,18 @@ function handleInput() {
       }
     }
 
+    // 4. Check ALL deployed operators (before path checks)
     for (const op of state.operators) {
       if (!op.deployed) continue;
-      if (distance(worldMouse, op.position) < OP_R + 6) {
+      if (distance(worldMouse, op.position) < OP_R + 8) {
         if (state.selectedOpId === op.id) {
-          if (op.path.waypoints.length === 0) {
-            op.path.waypoints.push(makeWaypoint(op.position));
-            state.interaction = { type: 'placing_waypoints', opId: op.id };
-          } else {
-            state.interaction = { type: 'moving_op', opId: op.id };
-          }
+          // Already selected - start drag (will open popup on short click via release handler)
+          state.interaction = { type: 'moving_op', opId: op.id };
         } else {
-          state.selectedOpId = op.id; state.popup = null;
-          if (op.path.waypoints.length === 0) {
-            op.path.waypoints.push(makeWaypoint(op.position));
-            state.interaction = { type: 'placing_waypoints', opId: op.id };
-          }
+          // Select this operator
+          state.selectedOpId = op.id;
+          state.popup = null;
+          state.interaction = { type: 'moving_op', opId: op.id };
         }
         return;
       }
@@ -759,7 +874,7 @@ buildCv.addEventListener('mousemove', (e) => {
   }
   if (buildMouseDown && buildDragStart) {
     if (buildTool === 'line') buildDragEnd = snapAngle(buildDragStart, snapVec(buildMousePos));
-    else if (buildTool === 'square') buildDragEnd = snapVec(buildMousePos);
+    else if (buildTool === 'square' || buildTool === 'room') buildDragEnd = snapVec(buildMousePos);
   }
 });
 
@@ -768,7 +883,7 @@ buildCv.addEventListener('mousedown', (e) => {
   const p = buildPos(e);
   buildMouseDown = true;
 
-  if (buildTool === 'line' || buildTool === 'square') {
+  if (buildTool === 'line' || buildTool === 'square' || buildTool === 'room') {
     buildDragStart = snapVec(p); buildDragEnd = null;
   } else if (buildTool === 'delete') {
     if (buildHoveredWall >= 0) { pushHistory(); customRoom.walls.splice(buildHoveredWall, 1); buildHoveredWall = -1; updateFloor(); }
@@ -812,6 +927,17 @@ buildCv.addEventListener('mouseup', () => {
       customRoom.walls.push(makeWall(x1, y0, x1, y1)); // right
       customRoom.walls.push(makeWall(x1, y1, x0, y1)); // bottom
       customRoom.walls.push(makeWall(x0, y1, x0, y0)); // left
+      mergeWalls(); updateFloor();
+    }
+  } else if (buildTool === 'room' && buildDragStart && buildDragEnd) {
+    const s = buildDragStart, e = buildDragEnd;
+    const x0 = Math.min(s.x, e.x), y0 = Math.min(s.y, e.y), x1 = Math.max(s.x, e.x), y1 = Math.max(s.y, e.y);
+    const rw = x1 - x0, rh = y1 - y0;
+    if (rw > GRID * 1.5 && rh > GRID * 1.5) {
+      pushHistory();
+      const stampFn = STAMP_TEMPLATES[buildSelectedStamp];
+      const newWalls = stampFn(x0, y0, rw, rh);
+      customRoom.walls.push(...newWalls);
       mergeWalls(); updateFloor();
     }
   }
@@ -913,6 +1039,34 @@ function renderBuild() {
     ctx.fillText(`${x1 - x0} \u00D7 ${y1 - y0}`, (x0 + x1) / 2, y0 - 10);
   }
 
+  // ---- Preview: Room Stamp ----
+  if (buildTool === 'room' && buildDragStart && buildDragEnd) {
+    const s = buildDragStart, e = buildDragEnd;
+    const x0 = Math.min(s.x, e.x), y0 = Math.min(s.y, e.y), x1 = Math.max(s.x, e.x), y1 = Math.max(s.y, e.y);
+    const rw = x1 - x0, rh = y1 - y0;
+    if (rw > GRID && rh > GRID) {
+      const stampFn = STAMP_TEMPLATES[buildSelectedStamp];
+      const previewWalls = stampFn(x0, y0, rw, rh);
+      ctx.globalAlpha = 0.45;
+      for (const pw of previewWalls) {
+        ctx.lineCap = 'round'; ctx.lineWidth = 8;
+        ctx.strokeStyle = pw.hasDoor ? 'rgba(192,160,96,0.5)' : 'rgba(68,187,170,0.5)';
+        ctx.setLineDash([10, 6]);
+        ctx.beginPath(); ctx.moveTo(pw.a.x, pw.a.y); ctx.lineTo(pw.b.x, pw.b.y); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.globalAlpha = 1;
+      // Corner dots
+      ctx.fillStyle = '#44bbaa';
+      for (const p of [{x:x0,y:y0},{x:x1,y:y0},{x:x1,y:y1},{x:x0,y:y1}]) {
+        ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
+      }
+      // Label
+      ctx.fillStyle = 'rgba(68,187,170,0.8)'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.fillText(buildSelectedStamp + ` ${rw}\u00D7${rh}`, (x0 + x1) / 2, y0 - 10);
+    }
+  }
+
   // ---- Threats ----
   for (const t of customRoom.threats) {
     ctx.fillStyle = 'rgba(200,50,50,0.12)';
@@ -980,7 +1134,7 @@ function renderBuild() {
 
   // Tool info HUD
   const toolLabel: Record<BuildToolType, string> = {
-    line: 'LINE', square: 'SQUARE', delete: 'DELETE', door: 'DOOR', threat: 'THREAT', entry: 'ENTRY',
+    line: 'LINE', square: 'SQUARE', delete: 'DELETE', door: 'DOOR', threat: 'THREAT', entry: 'ENTRY', room: buildSelectedStamp.toUpperCase(),
   };
   const toolHint: Record<BuildToolType, string> = {
     line: 'Drag to draw a wall. Snaps to 15\u00B0 increments.',
@@ -989,6 +1143,7 @@ function renderBuild() {
     door: 'Click a slot on any wall to place or toggle a door.',
     threat: 'Click to place a threat marker.',
     entry: 'Click to place an operator entry point.',
+    room: 'Drag to stamp a ' + buildSelectedStamp + ' room layout.',
   };
   ctx.fillStyle = 'rgba(8,14,18,0.85)';
   ctx.fillRect(6, 6, 320, 32);
