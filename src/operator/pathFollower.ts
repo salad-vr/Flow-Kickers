@@ -2,64 +2,46 @@ import type { Operator, GameState } from '../types';
 import { getPointAtDistance, getTangentAtDistance, buildSplineLUT } from '../math/spline';
 import { angle as vecAngle, lerpAngle } from '../math/vec2';
 
-const TURN_RATE = 6.0;
-const ARRIVE_SLOW_RADIUS = 30;
+const TURN = 6.0;
+const SLOW_R = 30;
 
 export function rebuildPathLUT(op: Operator) {
-  if (op.path.waypoints.length < 2) {
-    op.path.splineLUT = null;
-    return;
-  }
-  const points = op.path.waypoints.map(w => w.position);
-  op.path.splineLUT = buildSplineLUT(points, 30);
+  if (op.path.waypoints.length < 2) { op.path.splineLUT = null; return; }
+  op.path.splineLUT = buildSplineLUT(op.path.waypoints.map(w => w.position), 30);
 }
 
 export function updatePathFollowing(op: Operator, dt: number, state: GameState): boolean {
   const lut = op.path.splineLUT;
-  if (!lut || lut.totalLength === 0 || op.reachedEnd) {
-    op.isMoving = false;
-    return false;
-  }
+  if (!lut || lut.totalLength === 0 || op.reachedEnd) { op.isMoving = false; return false; }
 
-  // Check hold
   if (op.isHolding) {
     const wp = op.path.waypoints[op.currentWaypointIndex];
-    if (wp && wp.hold) {
-      const goCode = wp.goCode || 'A';
-      if (!state.goCodesTriggered[goCode]) {
-        if (wp.facingOverride !== null) {
-          op.angle = lerpAngle(op.angle, wp.facingOverride, TURN_RATE * dt);
-        } else if (wp.lookTarget) {
-          const la = Math.atan2(wp.lookTarget.y - op.position.y, wp.lookTarget.x - op.position.x);
-          op.angle = lerpAngle(op.angle, la, TURN_RATE * dt);
-        }
+    if (wp?.hold) {
+      const gc = wp.goCode || 'A';
+      if (!state.goCodesTriggered[gc]) {
+        if (wp.facingOverride !== null) op.angle = lerpAngle(op.angle, wp.facingOverride, TURN * dt);
+        else if (wp.lookTarget) op.angle = lerpAngle(op.angle, Math.atan2(wp.lookTarget.y - op.position.y, wp.lookTarget.x - op.position.x), TURN * dt);
         return false;
       }
       op.isHolding = false;
     }
   }
 
-  // Get current tempo: operator base * current waypoint's tempo
-  const currentWp = op.path.waypoints[op.currentWaypointIndex];
-  const wpTempo = currentWp ? currentWp.tempo : 1;
-  const effectiveTempo = op.tempo * wpTempo;
+  const cw = op.path.waypoints[op.currentWaypointIndex];
+  const t = op.tempo * (cw?.tempo ?? 1);
+  let spd = op.speed * t;
 
-  let speed = op.speed * effectiveTempo;
-
-  // Arrive behavior near hold waypoints
-  const nextHoldWp = findNextHoldWaypoint(op);
-  if (nextHoldWp !== null) {
-    const holdDist = getWaypointDistance(op, nextHoldWp);
-    if (holdDist !== null) {
-      const distToHold = holdDist - op.distanceTraveled;
-      if (distToHold < ARRIVE_SLOW_RADIUS && distToHold > 0) {
-        speed = Math.max(speed * (distToHold / ARRIVE_SLOW_RADIUS), speed * 0.15);
-      }
+  // Arrive behavior
+  for (let i = op.currentWaypointIndex; i < op.path.waypoints.length; i++) {
+    if (op.path.waypoints[i].hold) {
+      const hd = (i / (op.path.waypoints.length - 1)) * lut.totalLength;
+      const dist = hd - op.distanceTraveled;
+      if (dist > 0 && dist < SLOW_R) spd = Math.max(spd * (dist / SLOW_R), spd * 0.15);
+      break;
     }
   }
 
-  const moveDist = speed * dt;
-  op.distanceTraveled += moveDist;
+  op.distanceTraveled += spd * dt;
   op.isMoving = true;
 
   if (op.distanceTraveled >= lut.totalLength) {
@@ -67,75 +49,38 @@ export function updatePathFollowing(op: Operator, dt: number, state: GameState):
     op.reachedEnd = true;
     op.isMoving = false;
     op.position = getPointAtDistance(lut, lut.totalLength);
-    const lastWp = op.path.waypoints[op.path.waypoints.length - 1];
-    if (lastWp && lastWp.facingOverride !== null) {
-      op.angle = lerpAngle(op.angle, lastWp.facingOverride, TURN_RATE * dt);
-    } else if (lastWp && lastWp.lookTarget) {
-      const la = Math.atan2(lastWp.lookTarget.y - op.position.y, lastWp.lookTarget.x - op.position.x);
-      op.angle = lerpAngle(op.angle, la, TURN_RATE * dt);
-    }
+    const last = op.path.waypoints[op.path.waypoints.length - 1];
+    if (last?.facingOverride !== null) op.angle = lerpAngle(op.angle, last.facingOverride!, TURN * dt);
+    else if (last?.lookTarget) op.angle = lerpAngle(op.angle, Math.atan2(last.lookTarget.y - op.position.y, last.lookTarget.x - op.position.x), TURN * dt);
     return true;
   }
 
-  const newPos = getPointAtDistance(lut, op.distanceTraveled);
-  op.position = newPos;
+  op.position = getPointAtDistance(lut, op.distanceTraveled);
+  const tan = getTangentAtDistance(lut, op.distanceTraveled);
+  let target = vecAngle(tan);
 
-  const tangent = getTangentAtDistance(lut, op.distanceTraveled);
-  let targetAngle = vecAngle(tangent);
-
-  checkWaypointReached(op, lut);
-
-  // Apply look target or facing override
-  const activeWp = op.path.waypoints[op.currentWaypointIndex];
-  if (activeWp) {
-    if (activeWp.lookTarget) {
-      // Lock facing toward the look target point
-      targetAngle = Math.atan2(
-        activeWp.lookTarget.y - op.position.y,
-        activeWp.lookTarget.x - op.position.x
-      );
-    } else if (activeWp.facingOverride !== null) {
-      const wpDist = getWaypointDistance(op, op.currentWaypointIndex);
-      if (wpDist !== null) {
-        const distToWp = Math.abs(wpDist - op.distanceTraveled);
-        if (distToWp < 50) {
-          const blend = 1 - distToWp / 50;
-          targetAngle = lerpAngle(targetAngle, activeWp.facingOverride, blend);
-        }
+  // Advance waypoint index
+  const wc = op.path.waypoints.length;
+  if (wc >= 2) {
+    const ni = op.currentWaypointIndex + 1;
+    if (ni < wc) {
+      const wd = (ni / (wc - 1)) * lut.totalLength;
+      if (op.distanceTraveled >= wd - 5) {
+        op.currentWaypointIndex = ni;
+        if (op.path.waypoints[ni]?.hold) { op.isHolding = true; op.distanceTraveled = wd; }
       }
     }
   }
 
-  op.angle = lerpAngle(op.angle, targetAngle, Math.min(1, TURN_RATE * dt));
+  const aw = op.path.waypoints[op.currentWaypointIndex];
+  if (aw?.lookTarget) {
+    target = Math.atan2(aw.lookTarget.y - op.position.y, aw.lookTarget.x - op.position.x);
+  } else if (aw?.facingOverride !== null && aw.facingOverride !== undefined) {
+    const wd2 = (op.currentWaypointIndex / (wc - 1)) * lut.totalLength;
+    const d = Math.abs(wd2 - op.distanceTraveled);
+    if (d < 50) target = lerpAngle(target, aw.facingOverride, 1 - d / 50);
+  }
+
+  op.angle = lerpAngle(op.angle, target, Math.min(1, TURN * dt));
   return true;
-}
-
-function findNextHoldWaypoint(op: Operator): number | null {
-  for (let i = op.currentWaypointIndex; i < op.path.waypoints.length; i++) {
-    if (op.path.waypoints[i].hold) return i;
-  }
-  return null;
-}
-
-function getWaypointDistance(op: Operator, wpIndex: number): number | null {
-  const lut = op.path.splineLUT;
-  if (!lut || op.path.waypoints.length < 2) return null;
-  const segmentFraction = wpIndex / (op.path.waypoints.length - 1);
-  return segmentFraction * lut.totalLength;
-}
-
-function checkWaypointReached(op: Operator, lut: { totalLength: number }) {
-  const wpCount = op.path.waypoints.length;
-  if (wpCount < 2) return;
-  const targetIndex = op.currentWaypointIndex + 1;
-  if (targetIndex >= wpCount) return;
-  const wpDist = (targetIndex / (wpCount - 1)) * lut.totalLength;
-  if (op.distanceTraveled >= wpDist - 5) {
-    op.currentWaypointIndex = targetIndex;
-    const wp = op.path.waypoints[targetIndex];
-    if (wp && wp.hold) {
-      op.isHolding = true;
-      op.distanceTraveled = wpDist;
-    }
-  }
 }

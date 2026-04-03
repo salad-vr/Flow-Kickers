@@ -1,50 +1,35 @@
 import type { Operator, WaypointPath } from '../types';
-import { OPERATOR_SPEED, FOV_ANGLE, FOV_RANGE, COLORS } from '../types';
-import type { Vec2 } from '../math/vec2';
+import { OP_SPEED, FOV_ANG, FOV_DIST, C } from '../types';
 
 let nextId = 1;
 
-export function createOperator(position: Vec2, angle: number, colorIndex: number): Operator {
-  const color = COLORS.operatorColors[colorIndex % COLORS.operatorColors.length];
+export function createOperator(colorIndex: number): Operator {
+  const color = C.opColors[colorIndex % C.opColors.length];
   const id = nextId++;
-
-  const emptyPath: WaypointPath = {
-    waypoints: [],
-    splineLUT: null,
-    color,
-  };
-
+  const emptyPath: WaypointPath = { waypoints: [], splineLUT: null, color };
   return {
-    id,
-    position: { x: position.x, y: position.y },
-    angle,
-    speed: OPERATOR_SPEED,
-    fovAngle: FOV_ANGLE,
-    fovRange: FOV_RANGE,
-    color,
-    label: String(id),
-    path: emptyPath,
-    tempo: 1,
-    distanceTraveled: 0,
-    currentWaypointIndex: 0,
-    isHolding: false,
-    isMoving: false,
-    reachedEnd: false,
-    startPosition: { x: position.x, y: position.y },
-    startAngle: angle,
+    id, position: { x: 0, y: 0 }, angle: -Math.PI / 2,
+    speed: OP_SPEED, fovAngle: FOV_ANG, fovRange: FOV_DIST,
+    color, label: String(id), path: emptyPath, tempo: 1, deployed: false,
+    distanceTraveled: 0, currentWaypointIndex: 0,
+    isHolding: false, isMoving: false, reachedEnd: false,
+    startPosition: { x: 0, y: 0 }, startAngle: -Math.PI / 2,
   };
 }
 
 export function resetOperator(op: Operator) {
   op.position = { x: op.startPosition.x, y: op.startPosition.y };
   op.angle = op.startAngle;
-  op.distanceTraveled = 0;
-  op.currentWaypointIndex = 0;
-  op.isHolding = false;
-  op.isMoving = false;
-  op.reachedEnd = false;
+  op.distanceTraveled = 0; op.currentWaypointIndex = 0;
+  op.isHolding = false; op.isMoving = false; op.reachedEnd = false;
 }
 
-export function resetOperatorId() {
-  nextId = 1;
+export function createDeployedOperator(pos: { x: number; y: number }, colorIndex: number): Operator {
+  const op = createOperator(colorIndex);
+  op.position = { x: pos.x, y: pos.y };
+  op.startPosition = { x: pos.x, y: pos.y };
+  op.deployed = true;
+  return op;
 }
+
+export function resetOperatorId() { nextId = 1; }
