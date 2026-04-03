@@ -40,6 +40,8 @@ export type Interaction =
 
 export interface NodePopup { opId: number; wpIdx: number; position: Vec2; }
 
+export interface Camera { x: number; y: number; zoom: number; }
+
 export interface GameState {
   screen: AppScreen; mode: GameMode; room: Room;
   operators: Operator[];
@@ -47,6 +49,10 @@ export interface GameState {
   elapsedTime: number; selectedOpId: number | null;
   playbackSpeed: number; roomCleared: boolean;
   interaction: Interaction; popup: NodePopup | null;
+  camera: Camera;
+  isPanning: boolean;
+  panStart: Vec2;
+  panCamStart: Vec2;
 }
 
 export function makeWaypoint(pos: Vec2): Waypoint {
@@ -54,18 +60,18 @@ export function makeWaypoint(pos: Vec2): Waypoint {
 }
 
 export const C = {
-  bg: '#0d1b1e', floor: '#5c5040', grid: 'rgba(255,255,255,0.03)',
-  wall: '#111', wallEdge: '#000', doorOpen: '#5a6a3a', doorClosed: '#3a3a2a',
-  threat: '#cc3333', threatDead: '#444', threatGlow: 'rgba(200,50,50,0.25)',
-  opColors: ['#4499ff','#ff7733','#33cc55','#cc44cc','#ddcc33','#33cccc'],
-  opBody: '#c0ad80', opBodyGrey: '#666', opOutline: '#111',
+  bg: '#0c1525', floor: '#2a3552', grid: 'rgba(232,223,198,0.03)',
+  wall: '#1e3352', wallEdge: '#0c1525', doorOpen: '#4a6040', doorClosed: '#2a3530',
+  threat: '#cc4433', threatDead: '#3a3a44', threatGlow: 'rgba(200,60,50,0.2)',
+  opColors: ['#5588cc','#cc7744','#55aa66','#aa55aa','#ccaa44','#55aaaa'],
+  opBody: '#c8bb96', opBodyGrey: '#666', opOutline: '#0c1525',
   fov: (c: string) => c + '15', fovEdge: (c: string) => c + '35',
-  pathAlpha: 0.65, pathGrey: 0.12, node: '#fff', nodeSelected: '#88ffee',
-  hold: '#ff8844', lookLine: '#77ccee', tempoSlow: '#4499ff', tempoFast: '#ff5533',
-  hud: 'rgba(12,22,28,0.88)', hudBorder: '#1a3a3a', hudText: '#8aa', hudBright: '#cdc',
-  accent: '#44bbaa', cleared: '#44dd66',
-  panelBg: 'rgba(10,18,22,0.92)', panelBorder: '#1a3a3a',
-  popupBg: 'rgba(14,26,32,0.95)', popupBorder: '#2a5555',
+  pathAlpha: 0.65, pathGrey: 0.12, node: '#e8dfc6', nodeSelected: '#f2ecda',
+  hold: '#cc7744', lookLine: '#6699bb', tempoSlow: '#5588cc', tempoFast: '#cc5544',
+  hud: 'rgba(12,21,37,0.92)', hudBorder: '#1e3352', hudText: '#8a836e', hudBright: '#e8dfc6',
+  accent: '#e8dfc6', cleared: '#55aa66',
+  panelBg: 'rgba(12,21,37,0.95)', panelBorder: '#1e3352',
+  popupBg: 'rgba(17,29,51,0.96)', popupBorder: '#274166',
 } as const;
 
 export const GRID = 20;

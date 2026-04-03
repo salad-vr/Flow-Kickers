@@ -18,76 +18,55 @@ import { makeWall, makeThreat, createEmptyRoom } from './room/room';
 const app = document.getElementById('app')!;
 app.innerHTML = `
 <div id="menu-screen">
-  <div class="menu-bg-grid"></div>
-  <div class="menu-bg-vignette"></div>
-
   <div class="menu-content">
     <div class="menu-header">
-      <div class="menu-logo-mark">
-        <svg viewBox="0 0 40 40" fill="none">
-          <path d="M20 4L4 16l6 3.5L20 12l10 7.5L36 16 20 4z" fill="var(--accent)" opacity=".85"/>
-          <path d="M10 19.5L20 27l10-7.5v6.5L20 33.5 10 26v-6.5z" fill="var(--accent)" opacity=".4"/>
-          <path d="M10 26l10 7.5L30 26" stroke="var(--accent)" stroke-width="1.5" fill="none" opacity=".25"/>
-        </svg>
+      <h1 class="menu-title">
+        <span class="menu-title-flow">Flow</span>
+        <span class="menu-title-kickers">Kickers</span>
+      </h1>
+      <div class="menu-swoosh">
+        <svg viewBox="0 0 200 16" preserveAspectRatio="none"><path d="M0 12 C40 12, 60 2, 100 2 S160 12, 200 8" fill="none" stroke="var(--cream)" stroke-width="2.5" stroke-linecap="round" opacity=".3"/></svg>
       </div>
-      <h1 class="menu-title">FLOW <span class="menu-title-hl">KICKERS</span></h1>
-      <p class="menu-subtitle">TACTICAL ROOM CLEARING SIMULATOR</p>
-      <div class="menu-title-rule"></div>
+      <p class="menu-subtitle">Room Clearing Simulator</p>
     </div>
 
     <div class="menu-section">
-      <label class="menu-label">SELECT ROOM</label>
+      <label class="menu-label">Select Room</label>
       <div id="room-btns" class="menu-room-grid"></div>
     </div>
 
     <div class="menu-section">
-      <label class="menu-label">OPERATORS</label>
+      <label class="menu-label">Operators</label>
       <div id="op-btns" class="menu-op-row"></div>
     </div>
 
-    <button id="btn-start" class="menu-start-btn">
-      <span class="menu-start-text">START MISSION</span>
-      <svg class="menu-start-arrow" viewBox="0 0 20 20" fill="none"><path d="M6 4l8 6-8 6V4z" fill="currentColor"/></svg>
-    </button>
+    <button id="btn-start" class="menu-start-btn">START MISSION</button>
 
     <div class="menu-footer">
-      <div class="menu-divider"></div>
       <div class="menu-footer-row">
-        <button id="btn-tut" class="menu-link-btn">
-          <svg class="menu-link-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M7.2 7h1.6v3.5H7.2z" fill="currentColor"/><circle cx="8" cy="5.2" r=".9" fill="currentColor"/></svg>
-          How to Play
-        </button>
-        <button id="btn-build" class="menu-link-btn">
-          <svg class="menu-link-icon" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="1.5" stroke="currentColor" stroke-width="1.2" fill="none"/><line x1="5" y1="8" x2="11" y2="8" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="5" x2="8" y2="11" stroke="currentColor" stroke-width="1.2"/></svg>
-          Build Your Own
-        </button>
+        <button id="btn-tut" class="menu-link-btn">How to Play</button>
+        <button id="btn-build" class="menu-link-btn">Build Your Own</button>
       </div>
     </div>
   </div>
-
-  <span class="menu-version">v1.0</span>
 </div>
 
 <div id="tut-screen" style="display:none">
-  <div class="menu-bg-vignette"></div>
   <div class="menu-content tut-content">
-    <h2 class="tut-heading">HOW TO PLAY</h2>
+    <h2 class="tut-heading">How to Play</h2>
     <div class="tut-steps">
       <div class="tut-step"><span class="tut-num">1</span><span>Drag operators from the left panel onto the map to deploy them</span></div>
       <div class="tut-step"><span class="tut-num">2</span><span>Click a deployed operator, then click on the map to place waypoints</span></div>
       <div class="tut-step"><span class="tut-num">3</span><span>Right-click + drag to set <b>facing direction</b> at any point</span></div>
       <div class="tut-step"><span class="tut-num">4</span><span>Click a waypoint node to open options: hold, speed, delete, look-at</span></div>
-      <div class="tut-step"><span class="tut-num">5</span><span>Press <b>SPACE</b> or click <b>GO</b> to execute the plan</span></div>
-      <div class="tut-step"><span class="tut-num">6</span><span>Pause with <b>SPACE</b>, reset with <b>R</b></span></div>
+      <div class="tut-step"><span class="tut-num">5</span><span>Press <b>Space</b> or click <b>GO</b> to execute the plan</span></div>
+      <div class="tut-step"><span class="tut-num">6</span><span>Pause with <b>Space</b>, reset with <b>R</b></span></div>
     </div>
-    <button id="btn-tut-back" class="menu-start-btn" style="margin-top:8px;">
-      <span class="menu-start-text">BACK TO MENU</span>
-    </button>
+    <button id="btn-tut-back" class="menu-start-btn" style="margin-top:8px;">BACK TO MENU</button>
   </div>
 </div>
 
 <div id="build-screen" style="display:none">
-  <div class="menu-bg-vignette"></div>
   <div class="build-layout">
     <div class="build-canvas-area">
       <canvas id="build-cv"></canvas>
@@ -130,10 +109,7 @@ app.innerHTML = `
           <button id="build-import" class="build-action-btn">Load Code</button>
         </div>
       </div>
-      <button id="build-play" class="menu-start-btn build-play-btn">
-        <span class="menu-start-text">PLAY THIS ROOM</span>
-        <svg class="menu-start-arrow" viewBox="0 0 20 20" fill="none"><path d="M6 4l8 6-8 6V4z" fill="currentColor"/></svg>
-      </button>
+      <button id="build-play" class="menu-start-btn build-play-btn">PLAY THIS ROOM</button>
       <button id="build-back" class="menu-link-btn" style="width:100%;justify-content:center;">Back to Menu</button>
     </div>
   </div>
@@ -170,6 +146,8 @@ const state: GameState = {
   operators: [], goCodesTriggered: { A: false, B: false, C: false },
   elapsedTime: 0, selectedOpId: null, playbackSpeed: 1, roomCleared: false,
   interaction: { type: 'idle' }, popup: null,
+  camera: { x: 0, y: 0, zoom: 1 },
+  isPanning: false, panStart: { x: 0, y: 0 }, panCamStart: { x: 0, y: 0 },
 };
 
 // ---- Build state ----
@@ -224,11 +202,11 @@ function updateFloor() {
 
 // ---- Menu ----
 const ROOM_PREVIEWS: Record<string, string> = {
-  'Corner Fed': '<svg viewBox="0 0 60 48"><rect x="6" y="4" width="48" height="36" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity=".5"/><line x1="6" y1="40" x2="22" y2="40" stroke="var(--accent)" stroke-width="1.5" opacity=".25"/><line x1="34" y1="40" x2="54" y2="40" stroke="var(--accent)" stroke-width="1.5" opacity=".25"/><rect x="22" y="38" width="12" height="4" rx="1" fill="var(--accent)" opacity=".7"/></svg>',
-  'Center Fed': '<svg viewBox="0 0 60 48"><rect x="4" y="4" width="52" height="36" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity=".5"/><line x1="4" y1="40" x2="24" y2="40" stroke="var(--accent)" stroke-width="1.5" opacity=".25"/><line x1="36" y1="40" x2="56" y2="40" stroke="var(--accent)" stroke-width="1.5" opacity=".25"/><rect x="24" y="38" width="12" height="4" rx="1" fill="var(--accent)" opacity=".7"/></svg>',
-  'L-Shape': '<svg viewBox="0 0 60 48"><path d="M4 4h52v20H28v20H4V4z" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity=".5"/><rect x="10" y="42" width="10" height="3" rx="1" fill="var(--accent)" opacity=".7"/></svg>',
-  'T-Shape': '<svg viewBox="0 0 60 48"><path d="M4 4h52v16H38v24H22V20H4V4z" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity=".5"/><rect x="26" y="42" width="8" height="3" rx="1" fill="var(--accent)" opacity=".7"/></svg>',
-  'Simple Box': '<svg viewBox="0 0 60 48"><rect x="10" y="6" width="40" height="34" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity=".5"/><rect x="24" y="38" width="12" height="3" rx="1" fill="var(--accent)" opacity=".7"/></svg>',
+  'Corner Fed': '<svg viewBox="0 0 60 48"><rect x="6" y="4" width="48" height="36" fill="none" stroke="var(--cream)" stroke-width="1.5" opacity=".45"/><line x1="6" y1="40" x2="22" y2="40" stroke="var(--cream)" stroke-width="1.5" opacity=".2"/><line x1="34" y1="40" x2="54" y2="40" stroke="var(--cream)" stroke-width="1.5" opacity=".2"/><rect x="22" y="38" width="12" height="4" rx="1" fill="var(--cream)" opacity=".5"/></svg>',
+  'Center Fed': '<svg viewBox="0 0 60 48"><rect x="4" y="4" width="52" height="36" fill="none" stroke="var(--cream)" stroke-width="1.5" opacity=".45"/><line x1="4" y1="40" x2="24" y2="40" stroke="var(--cream)" stroke-width="1.5" opacity=".2"/><line x1="36" y1="40" x2="56" y2="40" stroke="var(--cream)" stroke-width="1.5" opacity=".2"/><rect x="24" y="38" width="12" height="4" rx="1" fill="var(--cream)" opacity=".5"/></svg>',
+  'L-Shape': '<svg viewBox="0 0 60 48"><path d="M4 4h52v20H28v20H4V4z" fill="none" stroke="var(--cream)" stroke-width="1.5" opacity=".45"/><rect x="10" y="42" width="10" height="3" rx="1" fill="var(--cream)" opacity=".5"/></svg>',
+  'T-Shape': '<svg viewBox="0 0 60 48"><path d="M4 4h52v16H38v24H22V20H4V4z" fill="none" stroke="var(--cream)" stroke-width="1.5" opacity=".45"/><rect x="26" y="42" width="8" height="3" rx="1" fill="var(--cream)" opacity=".5"/></svg>',
+  'Simple Box': '<svg viewBox="0 0 60 48"><rect x="10" y="6" width="40" height="34" fill="none" stroke="var(--cream)" stroke-width="1.5" opacity=".45"/><rect x="24" y="38" width="12" height="3" rx="1" fill="var(--cream)" opacity=".5"/></svg>',
 };
 
 const roomBtns = document.getElementById('room-btns')!;
@@ -315,6 +293,10 @@ function show(s: 'menu' | 'tut' | 'build' | 'game') {
   document.getElementById('build-screen')!.style.display = s === 'build' ? 'flex' : 'none';
   document.getElementById('game-screen')!.style.display = s === 'game' ? 'flex' : 'none';
   state.screen = s === 'game' ? 'game' : 'menu';
+  if (s === 'game') {
+    // Re-size canvas now that game screen is visible
+    requestAnimationFrame(() => sizeCanvas());
+  }
 }
 
 function startMission() {
@@ -434,10 +416,58 @@ async function doExport() {
   doReset();
 }
 
+// ---- Camera ----
+/** Convert screen-space mouse pos to world-space (accounting for camera pan/zoom) */
+function screenToWorld(screenPos: Vec2): Vec2 {
+  const cam = state.camera;
+  return {
+    x: (screenPos.x - canvas.width / 2) / cam.zoom + cam.x,
+    y: (screenPos.y - canvas.height / 2) / cam.zoom + cam.y,
+  };
+}
+
+function handleCamera() {
+  const input = getInput();
+
+  // Scroll wheel zoom
+  if (input.scrollDelta !== 0) {
+    const zoomFactor = 1 + input.scrollDelta * 0.001;
+    const oldZoom = state.camera.zoom;
+    state.camera.zoom = Math.max(0.3, Math.min(3, oldZoom * zoomFactor));
+    // Zoom toward mouse position
+    const mouseWorld = screenToWorld(input.mousePos);
+    state.camera.x += (mouseWorld.x - state.camera.x) * (1 - oldZoom / state.camera.zoom) * 0.3;
+    state.camera.y += (mouseWorld.y - state.camera.y) * (1 - oldZoom / state.camera.zoom) * 0.3;
+  }
+
+  // Middle-click pan
+  if (input.middleJustPressed) {
+    state.isPanning = true;
+    state.panStart = { x: input.mousePos.x, y: input.mousePos.y };
+    state.panCamStart = { x: state.camera.x, y: state.camera.y };
+  }
+  if (state.isPanning && input.middleMouseDown) {
+    const dx = (input.mousePos.x - state.panStart.x) / state.camera.zoom;
+    const dy = (input.mousePos.y - state.panStart.y) / state.camera.zoom;
+    state.camera.x = state.panCamStart.x - dx;
+    state.camera.y = state.panCamStart.y - dy;
+  }
+  if (input.middleJustReleased) {
+    state.isPanning = false;
+  }
+}
+
 // ---- Input ----
 function handleInput() {
   const input = getInput();
   if (state.screen !== 'game') return;
+
+  // Camera always updates (even during execution)
+  handleCamera();
+
+  // Get world-space mouse position for all game interactions
+  const worldMouse = screenToWorld(input.mousePos);
+
   if (state.mode === 'executing') return;
   const inter = state.interaction;
 
@@ -448,9 +478,9 @@ function handleInput() {
 
   if (inter.type === 'deploying_op') {
     const op = state.operators.find(o => o.id === inter.opId);
-    if (op && input.mouseDown) op.position = copy(input.mousePos);
+    if (op && input.mouseDown) op.position = copy(worldMouse);
     if (input.justReleased && op) {
-      if (input.mousePos.x > DEPLOY_PANEL_W + 10) {
+      if (input.mousePos.x > DEPLOY_PANEL_W + 10) { // screen-space check for panel
         op.deployed = true;
         op.startPosition = copy(op.position);
       }
@@ -461,7 +491,7 @@ function handleInput() {
 
   if (inter.type === 'moving_op') {
     const op = state.operators.find(o => o.id === inter.opId);
-    if (op && input.mouseDown) { op.position = copy(input.mousePos); op.startPosition = copy(op.position); }
+    if (op && input.mouseDown) { op.position = copy(worldMouse); op.startPosition = copy(op.position); }
     if (input.justReleased) state.interaction = { type: 'idle' };
     return;
   }
@@ -469,8 +499,8 @@ function handleInput() {
   if (inter.type === 'placing_waypoints') {
     const op = state.operators.find(o => o.id === inter.opId);
     if (input.justPressed && op) {
-      if (input.mousePos.x < DEPLOY_PANEL_W) { state.interaction = { type: 'idle' }; return; }
-      op.path.waypoints.push(makeWaypoint(input.mousePos));
+      if (input.mousePos.x < DEPLOY_PANEL_W) { state.interaction = { type: 'idle' }; return; } // screen-space
+      op.path.waypoints.push(makeWaypoint(worldMouse));
       rebuildPathLUT(op);
     }
     if (input.rightJustPressed && op) state.interaction = { type: 'idle' };
@@ -482,7 +512,7 @@ function handleInput() {
     if (op && input.rightMouseDown) {
       const target = inter.wpIdx !== null ? op.path.waypoints[inter.wpIdx] : null;
       const origin = target ? target.position : op.position;
-      const dx = input.mousePos.x - origin.x, dy = input.mousePos.y - origin.y;
+      const dx = worldMouse.x - origin.x, dy = worldMouse.y - origin.y;
       if (dx * dx + dy * dy > 64) {
         const a = Math.atan2(dy, dx);
         if (target) { target.facingOverride = a; target.lookTarget = null; }
@@ -495,7 +525,7 @@ function handleInput() {
 
   if (inter.type === 'dragging_node') {
     const op = state.operators.find(o => o.id === inter.opId);
-    if (op && input.mouseDown) { op.path.waypoints[inter.wpIdx].position = copy(input.mousePos); rebuildPathLUT(op); }
+    if (op && input.mouseDown) { op.path.waypoints[inter.wpIdx].position = copy(worldMouse); rebuildPathLUT(op); }
     if (input.justReleased) {
       if (!input.isDragging && op) state.popup = { opId: op.id, wpIdx: inter.wpIdx, position: copy(op.path.waypoints[inter.wpIdx].position) };
       state.interaction = { type: 'idle' };
@@ -506,7 +536,7 @@ function handleInput() {
   if (inter.type === 'setting_look_target') {
     if (input.justPressed) {
       const op = state.operators.find(o => o.id === inter.opId);
-      if (op) { op.path.waypoints[inter.wpIdx].lookTarget = copy(input.mousePos); op.path.waypoints[inter.wpIdx].facingOverride = null; }
+      if (op) { op.path.waypoints[inter.wpIdx].lookTarget = copy(worldMouse); op.path.waypoints[inter.wpIdx].facingOverride = null; }
       state.interaction = { type: 'idle' };
     }
     return;
@@ -518,7 +548,7 @@ function handleInput() {
       if (op) {
         const target = inter.wpIdx !== null ? op.path.waypoints[inter.wpIdx] : null;
         const origin = target ? target.position : op.position;
-        const a = Math.atan2(input.mousePos.y - origin.y, input.mousePos.x - origin.x);
+        const a = Math.atan2(worldMouse.y - origin.y, worldMouse.x - origin.x);
         const norm = (a + Math.PI) / (2 * Math.PI);
         const tempo = Math.round((0.2 + norm * 2.8) * 10) / 10;
         if (target) target.tempo = tempo; else op.tempo = tempo;
