@@ -200,6 +200,71 @@ function updateFloor() {
   } else customRoom.floor = [];
 }
 
+// ---- Wall merging: merge collinear overlapping walls into one ----
+function mergeWalls() {
+  const EPS = 2;
+  let merged = true;
+  while (merged) {
+    merged = false;
+    for (let i = 0; i < customRoom.walls.length && !merged; i++) {
+      for (let j = i + 1; j < customRoom.walls.length && !merged; j++) {
+        const a = customRoom.walls[i], b = customRoom.walls[j];
+        if (a.hasDoor || b.hasDoor) continue;
+        const m = tryMerge(a, b, EPS);
+        if (m) {
+          customRoom.walls[i] = m;
+          customRoom.walls.splice(j, 1);
+          merged = true;
+        }
+      }
+    }
+  }
+}
+
+function tryMerge(
+  w1: { a: Vec2; b: Vec2 },
+  w2: { a: Vec2; b: Vec2 },
+  eps: number,
+): ReturnType<typeof makeWall> | null {
+  const dx1 = w1.b.x - w1.a.x, dy1 = w1.b.y - w1.a.y;
+  const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+  if (len1 < 1) return null;
+  const nx = -dy1 / len1, ny = dx1 / len1;
+  const d2a = Math.abs((w2.a.x - w1.a.x) * nx + (w2.a.y - w1.a.y) * ny);
+  const d2b = Math.abs((w2.b.x - w1.a.x) * nx + (w2.b.y - w1.a.y) * ny);
+  if (d2a > eps || d2b > eps) return null;
+  const ux = dx1 / len1, uy = dy1 / len1;
+  const p = (v: Vec2) => (v.x - w1.a.x) * ux + (v.y - w1.a.y) * uy;
+  const t1a = p(w1.a), t1b = p(w1.b);
+  const t2a = p(w2.a), t2b = p(w2.b);
+  const min1 = Math.min(t1a, t1b), max1 = Math.max(t1a, t1b);
+  const min2 = Math.min(t2a, t2b), max2 = Math.max(t2a, t2b);
+  if (max1 < min2 - eps || max2 < min1 - eps) return null;
+  const minT = Math.min(min1, min2), maxT = Math.max(max1, max2);
+  const ax = w1.a.x + ux * minT, ay = w1.a.y + uy * minT;
+  const bx = w1.a.x + ux * maxT, by = w1.a.y + uy * maxT;
+  return makeWall(Math.round(ax), Math.round(ay), Math.round(bx), Math.round(by));
+}
+
+// ---- Door slot helpers ----
+const DOOR_SLOT_SPACING = 40;
+
+function getDoorSlots(w: { a: Vec2; b: Vec2 }): number[] {
+  const dx = w.b.x - w.a.x, dy = w.b.y - w.a.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < DOOR_W + 10) return [];
+  const margin = (DOOR_W / 2 + 4) / len;
+  const usable = 1 - 2 * margin;
+  if (usable <= 0) return [];
+  const count = Math.max(1, Math.floor((usable * len) / DOOR_SLOT_SPACING) + 1);
+  const slots: number[] = [];
+  if (count === 1) { slots.push(0.5); }
+  else { for (let i = 0; i < count; i++) slots.push(margin + (usable * i) / (count - 1)); }
+  return slots;
+}
+
+let buildHoveredDoorSlot: { wallIdx: number; slotFrac: number } | null = null;
+
 // ---- Menu ----
 const ROOM_PREVIEWS: Record<string, string> = {
   'Corner Fed': '<svg viewBox="0 0 60 48"><rect x="6" y="4" width="48" height="36" fill="none" stroke="var(--cream)" stroke-width="1.5" opacity=".45"/><line x1="6" y1="40" x2="22" y2="40" stroke="var(--cream)" stroke-width="1.5" opacity=".2"/><line x1="34" y1="40" x2="54" y2="40" stroke="var(--cream)" stroke-width="1.5" opacity=".2"/><rect x="22" y="38" width="12" height="4" rx="1" fill="var(--cream)" opacity=".5"/></svg>',
@@ -264,7 +329,7 @@ document.querySelectorAll('.build-tool').forEach(btn => {
 // Share codes
 document.getElementById('build-export')!.onclick = () => {
   const code = JSON.stringify({
-    w: customRoom.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.hasDoor ? (w.doorOpen ? 1 : 2) : 0]),
+    w: customRoom.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.hasDoor ? (w.doorOpen ? 1 : 2) : 0, w.doorPos]),
     t: customRoom.threats.map(t => [t.position.x, t.position.y]),
     e: customRoom.entryPoints.map(e => [e.x, e.y]),
     f: customRoom.floor.map(p => [p.x, p.y]),
@@ -277,7 +342,7 @@ document.getElementById('build-import')!.onclick = () => {
     const d = JSON.parse((document.getElementById('build-code') as HTMLTextAreaElement).value);
     pushHistory();
     customRoom.walls = (d.w || []).map((w: number[]) => {
-      const wall = makeWall(w[0], w[1], w[2], w[3], w[4] > 0);
+      const wall = makeWall(w[0], w[1], w[2], w[3], w[4] > 0, w[5] ?? 0.5);
       if (w[4] === 1) wall.doorOpen = true;
       return wall;
     });
@@ -664,12 +729,32 @@ function buildPos(e: MouseEvent): Vec2 {
 
 buildCv.addEventListener('mousemove', (e) => {
   buildMousePos = buildPos(e);
-  if (buildTool === 'delete' || buildTool === 'door') {
+  if (buildTool === 'delete') {
     buildHoveredWall = -1;
     let best = 15;
     for (let i = 0; i < customRoom.walls.length; i++) {
       const d = distToSegment(buildMousePos, customRoom.walls[i].a, customRoom.walls[i].b);
       if (d < best) { best = d; buildHoveredWall = i; }
+    }
+  }
+  if (buildTool === 'door') {
+    // Find nearest door slot across all walls
+    buildHoveredWall = -1;
+    buildHoveredDoorSlot = null;
+    let bestDist = 20;
+    for (let i = 0; i < customRoom.walls.length; i++) {
+      const w = customRoom.walls[i];
+      const slots = getDoorSlots(w);
+      const dx = w.b.x - w.a.x, dy = w.b.y - w.a.y;
+      for (const frac of slots) {
+        const sx = w.a.x + dx * frac, sy = w.a.y + dy * frac;
+        const d = distance(buildMousePos, { x: sx, y: sy });
+        if (d < bestDist) {
+          bestDist = d;
+          buildHoveredWall = i;
+          buildHoveredDoorSlot = { wallIdx: i, slotFrac: frac };
+        }
+      }
     }
   }
   if (buildMouseDown && buildDragStart) {
@@ -688,12 +773,21 @@ buildCv.addEventListener('mousedown', (e) => {
   } else if (buildTool === 'delete') {
     if (buildHoveredWall >= 0) { pushHistory(); customRoom.walls.splice(buildHoveredWall, 1); buildHoveredWall = -1; updateFloor(); }
   } else if (buildTool === 'door') {
-    if (buildHoveredWall >= 0) {
-      const w = customRoom.walls[buildHoveredWall];
+    if (buildHoveredDoorSlot) {
+      const w = customRoom.walls[buildHoveredDoorSlot.wallIdx];
+      const clickedFrac = buildHoveredDoorSlot.slotFrac;
       pushHistory();
-      if (!w.hasDoor) { w.hasDoor = true; w.doorOpen = true; }
-      else if (w.doorOpen) { w.doorOpen = false; }
-      else { w.hasDoor = false; w.doorOpen = false; }
+      if (!w.hasDoor) {
+        // Place door at this slot
+        w.hasDoor = true; w.doorOpen = true; w.doorPos = clickedFrac;
+      } else if (Math.abs(w.doorPos - clickedFrac) < 0.05) {
+        // Clicking on existing door position: cycle open -> closed -> remove
+        if (w.doorOpen) { w.doorOpen = false; }
+        else { w.hasDoor = false; w.doorOpen = false; }
+      } else {
+        // Clicking a different slot: move door there
+        w.doorPos = clickedFrac; w.doorOpen = true;
+      }
     }
   } else if (buildTool === 'threat') {
     pushHistory(); customRoom.threats.push(makeThreat(snapGrid(p.x), snapGrid(p.y)));
@@ -708,7 +802,7 @@ buildCv.addEventListener('mouseup', () => {
 
   if (buildTool === 'line' && buildDragStart && buildDragEnd) {
     const s = buildDragStart, e = { x: snapGrid(buildDragEnd.x), y: snapGrid(buildDragEnd.y) };
-    if (distance(s, e) > GRID * 0.5) { pushHistory(); customRoom.walls.push(makeWall(s.x, s.y, e.x, e.y)); updateFloor(); }
+    if (distance(s, e) > GRID * 0.5) { pushHistory(); customRoom.walls.push(makeWall(s.x, s.y, e.x, e.y)); mergeWalls(); updateFloor(); }
   } else if (buildTool === 'square' && buildDragStart && buildDragEnd) {
     const s = buildDragStart, e = buildDragEnd;
     const x0 = Math.min(s.x, e.x), y0 = Math.min(s.y, e.y), x1 = Math.max(s.x, e.x), y1 = Math.max(s.y, e.y);
@@ -718,7 +812,7 @@ buildCv.addEventListener('mouseup', () => {
       customRoom.walls.push(makeWall(x1, y0, x1, y1)); // right
       customRoom.walls.push(makeWall(x1, y1, x0, y1)); // bottom
       customRoom.walls.push(makeWall(x0, y1, x0, y0)); // left
-      updateFloor();
+      mergeWalls(); updateFloor();
     }
   }
   buildDragStart = null; buildDragEnd = null;
@@ -860,13 +954,28 @@ function renderBuild() {
     ctx.beginPath(); ctx.moveTo(buildMousePos.x + 6, buildMousePos.y - 6); ctx.lineTo(buildMousePos.x - 6, buildMousePos.y + 6); ctx.stroke();
   }
 
-  // Door hover ring
-  if (buildTool === 'door' && buildHoveredWall >= 0) {
-    const w = customRoom.walls[buildHoveredWall];
-    const cx = (w.a.x + w.b.x) / 2, cy = (w.a.y + w.b.y) / 2;
-    const p = 0.5 + 0.5 * Math.sin(buildAnimT * 4);
-    ctx.strokeStyle = `rgba(192,160,96,${0.3 + p * 0.4})`; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(cx, cy, 12 + p * 3, 0, Math.PI * 2); ctx.stroke();
+  // Door tool: show all slots on all walls
+  if (buildTool === 'door') {
+    for (let i = 0; i < customRoom.walls.length; i++) {
+      const w = customRoom.walls[i];
+      const slots = getDoorSlots(w);
+      const dx = w.b.x - w.a.x, dy = w.b.y - w.a.y;
+      for (const frac of slots) {
+        const sx = w.a.x + dx * frac, sy = w.a.y + dy * frac;
+        const isHovered = buildHoveredDoorSlot?.wallIdx === i && Math.abs(buildHoveredDoorSlot.slotFrac - frac) < 0.01;
+        const isExisting = w.hasDoor && Math.abs(w.doorPos - frac) < 0.05;
+        if (isExisting) continue; // don't draw slot dot over existing door
+        const pulse = isHovered ? 0.5 + 0.5 * Math.sin(buildAnimT * 5) : 0;
+        const alpha = isHovered ? 0.6 + pulse * 0.4 : 0.2;
+        const r = isHovered ? 6 + pulse * 2 : 4;
+        ctx.fillStyle = `rgba(192,160,96,${alpha})`;
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+        if (isHovered) {
+          ctx.strokeStyle = `rgba(192,160,96,0.6)`; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc(sx, sy, r + 3, 0, Math.PI * 2); ctx.stroke();
+        }
+      }
+    }
   }
 
   // Tool info HUD
@@ -877,7 +986,7 @@ function renderBuild() {
     line: 'Drag to draw a wall. Snaps to 15\u00B0 increments.',
     square: 'Drag to create a rectangle of 4 walls.',
     delete: 'Click on any wall to remove it.',
-    door: 'Click wall: Add opening \u2192 Close door \u2192 Remove.',
+    door: 'Click a slot on any wall to place or toggle a door.',
     threat: 'Click to place a threat marker.',
     entry: 'Click to place an operator entry point.',
   };
@@ -900,13 +1009,14 @@ function renderBuild() {
   ctx.fillText('[1-6] Tools  [Ctrl+Z] Undo', W - 10, H - 11);
 }
 
-function drawBuildWall(ctx: CanvasRenderingContext2D, w: { a: Vec2; b: Vec2; hasDoor: boolean; doorOpen: boolean }, hover: boolean) {
+function drawBuildWall(ctx: CanvasRenderingContext2D, w: { a: Vec2; b: Vec2; hasDoor: boolean; doorOpen: boolean; doorPos: number }, hover: boolean) {
   const { a, b } = w;
   const dx = b.x - a.x, dy = b.y - a.y, len = Math.sqrt(dx * dx + dy * dy);
   if (len < 1) return;
 
   if (w.hasDoor) {
-    const f = Math.min(DOOR_W / len, 0.9), gs = 0.5 - f / 2, ge = 0.5 + f / 2;
+    const dp = w.doorPos;
+    const f = Math.min(DOOR_W / len, 0.9), gs = dp - f / 2, ge = dp + f / 2;
     // Wall segments
     ctx.lineCap = 'round';
     ctx.strokeStyle = hover ? '#ff6655' : '#d8cbb0';
