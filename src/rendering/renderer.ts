@@ -1,18 +1,33 @@
-import type { GameState, Operator, Room, WallSegment, ThreatMarker, NodePopup } from '../types';
+import type { GameState, Operator, Room, WallSegment, ThreatMarker, NodePopup, Camera } from '../types';
 import { WALL_W, OP_R, THREAT_R, GRID, DOOR_W, C, NODE_R, DEPLOY_PANEL_W } from '../types';
 import { getWallsForCollision } from '../room/room';
 import { computeOperatorFOV } from '../operator/visibility';
 import type { Vec2 } from '../math/vec2';
 import type { Wall } from '../math/intersection';
 
+function worldToScreen(p: Vec2, cam: Camera, W: number, H: number): Vec2 {
+  return {
+    x: (p.x - cam.x) * cam.zoom + W / 2,
+    y: (p.y - cam.y) * cam.zoom + H / 2,
+  };
+}
+
 export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
   const ctx = canvas.getContext('2d')!;
   const W = canvas.width, H = canvas.height;
   const walls = getWallsForCollision(state.room);
   const sid = state.selectedOpId;
+  const cam = state.camera;
 
+  // Clear full screen
   ctx.fillStyle = C.bg;
   ctx.fillRect(0, 0, W, H);
+
+  // ---- Apply camera transform for world-space drawing ----
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(cam.zoom, cam.zoom);
+  ctx.translate(-cam.x, -cam.y);
 
   // Floor
   const fl = state.room.floor;
@@ -23,9 +38,16 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
   }
 
   // Grid (subtle)
-  ctx.strokeStyle = C.grid; ctx.lineWidth = 0.5;
-  for (let x = 0; x < W; x += GRID) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-  for (let y = 0; y < H; y += GRID) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 0.5 / cam.zoom;
+  const gridStep = GRID;
+  const viewLeft = cam.x - W / 2 / cam.zoom;
+  const viewTop = cam.y - H / 2 / cam.zoom;
+  const viewRight = cam.x + W / 2 / cam.zoom;
+  const viewBottom = cam.y + H / 2 / cam.zoom;
+  const gx0 = Math.floor(viewLeft / gridStep) * gridStep;
+  const gy0 = Math.floor(viewTop / gridStep) * gridStep;
+  for (let x = gx0; x <= viewRight; x += gridStep) { ctx.beginPath(); ctx.moveTo(x, viewTop); ctx.lineTo(x, viewBottom); ctx.stroke(); }
+  for (let y = gy0; y <= viewBottom; y += gridStep) { ctx.beginPath(); ctx.moveTo(viewLeft, y); ctx.lineTo(viewRight, y); ctx.stroke(); }
 
   // FOV cones
   for (const op of state.operators) {
@@ -56,7 +78,6 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
       ctx.strokeStyle = op.color; ctx.lineWidth = 1; ctx.globalAlpha = 0.35;
       ctx.setLineDash([6, 4]);
       ctx.beginPath(); ctx.moveTo(last.position.x, last.position.y);
-      // We don't have cursor pos in renderer, but last waypoint shows intent
       ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
     }
   }
@@ -68,16 +89,23 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
     drawOp(ctx, op, op.id === sid, grey);
   }
 
-  // Deploy panel (left side)
+  // ---- Restore from camera transform (back to screen space) ----
+  ctx.restore();
+
+  // Deploy panel (screen space)
   drawDeployPanel(ctx, state, H);
 
-  // Bottom HUD bar
+  // Bottom HUD bar (screen space)
   drawHUD(ctx, state, W, H);
 
-  // Popup
-  if (state.popup) drawPopup(ctx, state.popup, state);
+  // Popup (screen space - but positioned relative to world object)
+  if (state.popup) {
+    // Convert popup world position to screen
+    const sp = worldToScreen(state.popup.position, cam, W, H);
+    drawPopup(ctx, { ...state.popup, position: sp }, state);
+  }
 
-  // Room cleared overlay
+  // Room cleared overlay (screen space)
   if (state.roomCleared) {
     ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = 'rgba(10,30,20,0.9)';
@@ -123,7 +151,8 @@ function drawWall(ctx: CanvasRenderingContext2D, w: WallSegment) {
   if (hasDoor) {
     const dx = b.x - a.x, dy = b.y - a.y, len = Math.sqrt(dx * dx + dy * dy);
     if (len < 1) return;
-    const f = Math.min(DOOR_W / len, 0.9), gs = 0.5 - f / 2, ge = 0.5 + f / 2;
+    const dp = w.doorPos;
+    const f = Math.min(DOOR_W / len, 0.9), gs = dp - f / 2, ge = dp + f / 2;
     ctx.lineCap = 'round'; ctx.strokeStyle = C.wall; ctx.lineWidth = WALL_W;
     if (gs > 0.02) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x + dx * gs, a.y + dy * gs); ctx.stroke(); }
     if (ge < 0.98) { ctx.beginPath(); ctx.moveTo(a.x + dx * ge, a.y + dy * ge); ctx.lineTo(b.x, b.y); ctx.stroke(); }

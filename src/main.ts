@@ -314,6 +314,15 @@ function startMission() {
   for (let i = 0; i < selOpCount; i++) {
     state.operators.push(createOperator(i));
   }
+  // Center camera on room
+  if (state.room.floor.length > 0) {
+    let cx = 0, cy = 0;
+    for (const p of state.room.floor) { cx += p.x; cy += p.y; }
+    cx /= state.room.floor.length; cy /= state.room.floor.length;
+    state.camera = { x: cx, y: cy, zoom: 1 };
+  } else {
+    state.camera = { x: 500, y: 350, zoom: 1 };
+  }
   show('game');
 }
 
@@ -563,26 +572,27 @@ function handleInput() {
     const selOp = state.operators.find(o => o.id === state.selectedOpId && o.deployed);
     if (selOp) {
       for (let i = 0; i < selOp.path.waypoints.length; i++) {
-        if (distance(input.mousePos, selOp.path.waypoints[i].position) < NODE_R + 6) {
+        if (distance(worldMouse, selOp.path.waypoints[i].position) < NODE_R + 6) {
           state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: i }; return;
         }
       }
-      if (distance(input.mousePos, selOp.position) < OP_R + 8) {
+      if (distance(worldMouse, selOp.position) < OP_R + 8) {
         state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: null }; return;
       }
-      const dx = input.mousePos.x - selOp.position.x, dy = input.mousePos.y - selOp.position.y;
+      const dx = worldMouse.x - selOp.position.x, dy = worldMouse.y - selOp.position.y;
       selOp.angle = Math.atan2(dy, dx); selOp.startAngle = selOp.angle;
     }
     return;
   }
 
   if (input.justPressed) {
+    // Deploy panel hit test (screen-space)
     if (input.mousePos.x < DEPLOY_PANEL_W + 5) {
       const undeployed = state.operators.filter(o => !o.deployed);
       for (let i = 0; i < undeployed.length; i++) {
         if (Math.abs(input.mousePos.y - (80 + i * 36)) < 16) {
           const op = undeployed[i];
-          op.position = copy(input.mousePos);
+          op.position = copy(worldMouse);
           state.interaction = { type: 'deploying_op', opId: op.id };
           state.selectedOpId = op.id;
           return;
@@ -591,10 +601,11 @@ function handleInput() {
       return;
     }
 
+    // All game-world hit tests use worldMouse
     const selOp = state.operators.find(o => o.id === state.selectedOpId && o.deployed);
     if (selOp) {
       for (let i = 0; i < selOp.path.waypoints.length; i++) {
-        if (distance(input.mousePos, selOp.path.waypoints[i].position) < NODE_R + 4) {
+        if (distance(worldMouse, selOp.path.waypoints[i].position) < NODE_R + 4) {
           state.interaction = { type: 'dragging_node', opId: selOp.id, wpIdx: i }; return;
         }
       }
@@ -602,11 +613,11 @@ function handleInput() {
       if (lut && lut.samples.length > 1) {
         let bestD = Infinity, bestI = -1;
         for (let i = 0; i < lut.samples.length - 1; i++) {
-          const d = distToSegment(input.mousePos, lut.samples[i], lut.samples[i + 1]);
+          const d = distToSegment(worldMouse, lut.samples[i], lut.samples[i + 1]);
           if (d < bestD) { bestD = d; bestI = i; }
         }
         if (bestD < 12) {
-          const cp = closestPointOnSegment(input.mousePos, lut.samples[bestI], lut.samples[bestI + 1]);
+          const cp = closestPointOnSegment(worldMouse, lut.samples[bestI], lut.samples[bestI + 1]);
           const wc = selOp.path.waypoints.length;
           const frac = bestI / (lut.samples.length - 1);
           const insertAfter = Math.min(Math.floor(frac * (wc - 1)), wc - 2);
@@ -620,7 +631,7 @@ function handleInput() {
 
     for (const op of state.operators) {
       if (!op.deployed) continue;
-      if (distance(input.mousePos, op.position) < OP_R + 6) {
+      if (distance(worldMouse, op.position) < OP_R + 6) {
         if (state.selectedOpId === op.id) {
           if (op.path.waypoints.length === 0) {
             op.path.waypoints.push(makeWaypoint(op.position));
