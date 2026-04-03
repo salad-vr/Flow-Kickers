@@ -24,6 +24,7 @@ export function createOperator(position: Vec2, angle: number, colorIndex: number
     color,
     label: String(id),
     path: emptyPath,
+    tempo: 1,
     distanceTraveled: 0,
     currentWaypointIndex: 0,
     isHolding: false,
