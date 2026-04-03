@@ -1,17 +1,18 @@
 import './style.css';
 import type { GameState, Operator, Interaction, NodePopup, Room } from './types';
 import type { Vec2 } from './math/vec2';
-import { C, OP_R, NODE_R, DEPLOY_PANEL_W, makeWaypoint } from './types';
+import { C, OP_R, NODE_R, DEPLOY_PANEL_W, GRID, DOOR_W, WALL_W, makeWaypoint } from './types';
 import { startGameLoop } from './core/gameLoop';
 import { initInput, getInput, clearFrameInput } from './core/inputManager';
 import { ROOM_TEMPLATES, type RoomTemplateName } from './room/templates';
-import { createOperator, resetOperatorId, resetOperator } from './operator/operator';
+import { createOperator, createDeployedOperator, resetOperatorId, resetOperator } from './operator/operator';
 import { rebuildPathLUT } from './operator/pathFollower';
 import { distance, copy, distToSegment, closestPointOnSegment } from './math/vec2';
 import { updateSimulation, resetSimulation, startExecution } from './core/simulation';
 import { renderGame } from './rendering/renderer';
 import { exportGIF, downloadBlob } from './export/gifExporter';
 import { cornerFedRoom } from './room/templates';
+import { makeWall, makeThreat, createEmptyRoom } from './room/room';
 
 // ---- HTML ----
 const app = document.getElementById('app')!;
@@ -21,7 +22,6 @@ app.innerHTML = `
   <div class="menu-bg-vignette"></div>
 
   <div class="menu-content">
-    <!-- Header / Logo -->
     <div class="menu-header">
       <div class="menu-logo-mark">
         <svg viewBox="0 0 40 40" fill="none">
@@ -35,31 +35,31 @@ app.innerHTML = `
       <div class="menu-title-rule"></div>
     </div>
 
-    <!-- Room Selection -->
     <div class="menu-section">
       <label class="menu-label">SELECT ROOM</label>
       <div id="room-btns" class="menu-room-grid"></div>
     </div>
 
-    <!-- Operator Count -->
     <div class="menu-section">
       <label class="menu-label">OPERATORS</label>
       <div id="op-btns" class="menu-op-row"></div>
     </div>
 
-    <!-- Start Button -->
     <button id="btn-start" class="menu-start-btn">
       <span class="menu-start-text">START MISSION</span>
       <svg class="menu-start-arrow" viewBox="0 0 20 20" fill="none"><path d="M6 4l8 6-8 6V4z" fill="currentColor"/></svg>
     </button>
 
-    <!-- Footer Links -->
     <div class="menu-footer">
       <div class="menu-divider"></div>
       <div class="menu-footer-row">
         <button id="btn-tut" class="menu-link-btn">
           <svg class="menu-link-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M7.2 7h1.6v3.5H7.2z" fill="currentColor"/><circle cx="8" cy="5.2" r=".9" fill="currentColor"/></svg>
           How to Play
+        </button>
+        <button id="btn-build" class="menu-link-btn">
+          <svg class="menu-link-icon" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="1.5" stroke="currentColor" stroke-width="1.2" fill="none"/><line x1="5" y1="8" x2="11" y2="8" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="5" x2="8" y2="11" stroke="currentColor" stroke-width="1.2"/></svg>
+          Build Your Own
         </button>
       </div>
     </div>
@@ -86,6 +86,59 @@ app.innerHTML = `
   </div>
 </div>
 
+<div id="build-screen" style="display:none">
+  <div class="menu-bg-vignette"></div>
+  <div class="build-layout">
+    <div class="build-canvas-area">
+      <canvas id="build-cv"></canvas>
+    </div>
+    <div class="build-sidebar">
+      <h2 class="build-title">BUILD YOUR OWN</h2>
+      <div class="build-tools-section">
+        <label class="menu-label">TOOLS</label>
+        <div class="build-tools-grid">
+          <button class="build-tool active" data-tool="line"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><line x1="3" y1="17" x2="17" y2="3" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></div><span>Line</span><kbd>1</kbd></button>
+          <button class="build-tool" data-tool="square"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></div><span>Square</span><kbd>2</kbd></button>
+          <button class="build-tool" data-tool="delete"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><line x1="5" y1="5" x2="15" y2="15" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="15" y1="5" x2="5" y2="15" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></div><span>Delete</span><kbd>3</kbd></button>
+          <button class="build-tool" data-tool="door"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><rect x="5" y="2" width="10" height="16" fill="none" stroke="currentColor" stroke-width="1.8" rx="1.5"/><circle cx="13" cy="11" r="1.5" fill="currentColor"/></svg></div><span>Door</span><kbd>4</kbd></button>
+        </div>
+      </div>
+      <div class="build-tools-section">
+        <label class="menu-label">MARKERS</label>
+        <div class="build-tools-grid">
+          <button class="build-tool" data-tool="threat"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="4.5" x2="10" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="13" r="1.2" fill="currentColor"/></svg></div><span>Threat</span><kbd>5</kbd></button>
+          <button class="build-tool" data-tool="entry"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M10 3L10 13M6 9L10 13L14 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="4" y1="17" x2="16" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div><span>Entry</span><kbd>6</kbd></button>
+        </div>
+      </div>
+      <div class="build-divider"></div>
+      <div class="build-tools-section">
+        <label class="menu-label">OPERATORS</label>
+        <div id="build-op-btns" class="menu-op-row"></div>
+      </div>
+      <div class="build-tools-section">
+        <label class="menu-label">ACTIONS</label>
+        <div class="build-actions-row">
+          <button id="build-undo" class="build-action-btn">Undo</button>
+          <button id="build-clear" class="build-action-btn build-action-danger">Clear All</button>
+        </div>
+      </div>
+      <div class="build-tools-section">
+        <label class="menu-label">SHARE CODE</label>
+        <textarea id="build-code" class="build-textarea" rows="2" placeholder="Paste room code..."></textarea>
+        <div class="build-actions-row">
+          <button id="build-export" class="build-action-btn">Copy Code</button>
+          <button id="build-import" class="build-action-btn">Load Code</button>
+        </div>
+      </div>
+      <button id="build-play" class="menu-start-btn build-play-btn">
+        <span class="menu-start-text">PLAY THIS ROOM</span>
+        <svg class="menu-start-arrow" viewBox="0 0 20 20" fill="none"><path d="M6 4l8 6-8 6V4z" fill="currentColor"/></svg>
+      </button>
+      <button id="build-back" class="menu-link-btn" style="width:100%;justify-content:center;">Back to Menu</button>
+    </div>
+  </div>
+</div>
+
 <div id="game-screen" style="display:none">
   <canvas id="cv"></canvas>
 </div>
@@ -101,9 +154,15 @@ sizeCanvas();
 window.addEventListener('resize', sizeCanvas);
 initInput(canvas);
 
+// Build canvas
+const buildCv = document.getElementById('build-cv') as HTMLCanvasElement;
+buildCv.width = 800;
+buildCv.height = 600;
+
 // ---- State ----
 let selRoom: RoomTemplateName = 'Corner Fed';
 let selOpCount = 2;
+let buildOpCount = 2;
 
 const state: GameState = {
   screen: 'menu', mode: 'planning',
@@ -113,8 +172,57 @@ const state: GameState = {
   interaction: { type: 'idle' }, popup: null,
 };
 
+// ---- Build state ----
+let customRoom: Room = createEmptyRoom();
+type BuildToolType = 'line' | 'square' | 'delete' | 'door' | 'threat' | 'entry';
+let buildTool: BuildToolType = 'line';
+let buildDragStart: Vec2 | null = null;
+let buildDragEnd: Vec2 | null = null;
+let buildMousePos: Vec2 = { x: 0, y: 0 };
+let buildMouseDown = false;
+let buildHoveredWall = -1;
+let buildHistory: string[] = [];
+let buildAnimT = 0;
+
+function pushHistory() {
+  buildHistory.push(JSON.stringify({
+    w: customRoom.walls, t: customRoom.threats,
+    e: customRoom.entryPoints, f: customRoom.floor,
+  }));
+  if (buildHistory.length > 50) buildHistory.shift();
+}
+function undoHistory() {
+  if (!buildHistory.length) return;
+  const d = JSON.parse(buildHistory.pop()!);
+  customRoom.walls = d.w; customRoom.threats = d.t;
+  customRoom.entryPoints = d.e; customRoom.floor = d.f;
+}
+
+function snapGrid(v: number) { return Math.round(v / GRID) * GRID; }
+function snapVec(p: Vec2): Vec2 { return { x: snapGrid(p.x), y: snapGrid(p.y) }; }
+
+function snapAngle(start: Vec2, end: Vec2): Vec2 {
+  const dx = end.x - start.x, dy = end.y - start.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 5) return end;
+  const ang = Math.atan2(dy, dx);
+  const SNAP = Math.PI / 12; // 15 degrees
+  const snapped = Math.round(ang / SNAP) * SNAP;
+  return { x: start.x + Math.cos(snapped) * len, y: start.y + Math.sin(snapped) * len };
+}
+
+function updateFloor() {
+  if (customRoom.walls.length >= 3) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const w of customRoom.walls) {
+      x0 = Math.min(x0, w.a.x, w.b.x); y0 = Math.min(y0, w.a.y, w.b.y);
+      x1 = Math.max(x1, w.a.x, w.b.x); y1 = Math.max(y1, w.a.y, w.b.y);
+    }
+    customRoom.floor = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+  } else customRoom.floor = [];
+}
+
 // ---- Menu ----
-// Room template mini-preview SVGs
 const ROOM_PREVIEWS: Record<string, string> = {
   'Corner Fed': '<svg viewBox="0 0 60 48"><rect x="6" y="4" width="48" height="36" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity=".5"/><line x1="6" y1="40" x2="22" y2="40" stroke="var(--accent)" stroke-width="1.5" opacity=".25"/><line x1="34" y1="40" x2="54" y2="40" stroke="var(--accent)" stroke-width="1.5" opacity=".25"/><rect x="22" y="38" width="12" height="4" rx="1" fill="var(--accent)" opacity=".7"/></svg>',
   'Center Fed': '<svg viewBox="0 0 60 48"><rect x="4" y="4" width="52" height="36" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity=".5"/><line x1="4" y1="40" x2="24" y2="40" stroke="var(--accent)" stroke-width="1.5" opacity=".25"/><line x1="36" y1="40" x2="56" y2="40" stroke="var(--accent)" stroke-width="1.5" opacity=".25"/><rect x="24" y="38" width="12" height="4" rx="1" fill="var(--accent)" opacity=".7"/></svg>',
@@ -142,13 +250,69 @@ for (let i = 1; i <= 6; i++) {
   opBtns.appendChild(b);
 }
 
+// Build operator selector
+const buildOpBtns = document.getElementById('build-op-btns')!;
+for (let i = 1; i <= 6; i++) {
+  const b = document.createElement('button');
+  b.className = 'op-btn';
+  b.textContent = String(i);
+  if (i === buildOpCount) b.classList.add('sel');
+  b.onclick = () => { buildOpCount = i; buildOpBtns.querySelectorAll('.op-btn').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); };
+  buildOpBtns.appendChild(b);
+}
+
 document.getElementById('btn-start')!.onclick = startMission;
 document.getElementById('btn-tut')!.onclick = () => show('tut');
 document.getElementById('btn-tut-back')!.onclick = () => show('menu');
+document.getElementById('btn-build')!.onclick = () => {
+  customRoom = createEmptyRoom();
+  buildHistory = [];
+  show('build');
+};
+document.getElementById('build-back')!.onclick = () => show('menu');
+document.getElementById('build-play')!.onclick = startCustomMission;
+document.getElementById('build-undo')!.onclick = undoHistory;
+document.getElementById('build-clear')!.onclick = () => { pushHistory(); customRoom = createEmptyRoom(); };
 
-function show(s: 'menu' | 'tut' | 'game') {
+// Build tools
+document.querySelectorAll('.build-tool').forEach(btn => {
+  btn.addEventListener('click', () => {
+    buildTool = (btn as HTMLElement).dataset.tool as BuildToolType;
+    document.querySelectorAll('.build-tool').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+
+// Share codes
+document.getElementById('build-export')!.onclick = () => {
+  const code = JSON.stringify({
+    w: customRoom.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.hasDoor ? (w.doorOpen ? 1 : 2) : 0]),
+    t: customRoom.threats.map(t => [t.position.x, t.position.y]),
+    e: customRoom.entryPoints.map(e => [e.x, e.y]),
+    f: customRoom.floor.map(p => [p.x, p.y]),
+  });
+  (document.getElementById('build-code') as HTMLTextAreaElement).value = code;
+  navigator.clipboard.writeText(code).catch(() => {});
+};
+document.getElementById('build-import')!.onclick = () => {
+  try {
+    const d = JSON.parse((document.getElementById('build-code') as HTMLTextAreaElement).value);
+    pushHistory();
+    customRoom.walls = (d.w || []).map((w: number[]) => {
+      const wall = makeWall(w[0], w[1], w[2], w[3], w[4] > 0);
+      if (w[4] === 1) wall.doorOpen = true;
+      return wall;
+    });
+    customRoom.threats = (d.t || []).map((t: number[]) => makeThreat(t[0], t[1]));
+    customRoom.entryPoints = (d.e || []).map((e: number[]) => ({ x: e[0], y: e[1] }));
+    customRoom.floor = (d.f || []).map((p: number[]) => ({ x: p[0], y: p[1] }));
+  } catch { alert('Invalid room code'); }
+};
+
+function show(s: 'menu' | 'tut' | 'build' | 'game') {
   document.getElementById('menu-screen')!.style.display = s === 'menu' ? 'flex' : 'none';
   document.getElementById('tut-screen')!.style.display = s === 'tut' ? 'flex' : 'none';
+  document.getElementById('build-screen')!.style.display = s === 'build' ? 'flex' : 'none';
   document.getElementById('game-screen')!.style.display = s === 'game' ? 'flex' : 'none';
   state.screen = s === 'game' ? 'game' : 'menu';
 }
@@ -165,17 +329,56 @@ function startMission() {
   state.interaction = { type: 'idle' };
   state.popup = null;
   resetOperatorId();
-  // Create operators (undeployed - they sit in the panel)
   for (let i = 0; i < selOpCount; i++) {
     state.operators.push(createOperator(i));
   }
   show('game');
 }
 
+function startCustomMission() {
+  state.room = JSON.parse(JSON.stringify(customRoom)) as Room;
+  for (const w of state.room.walls) if (w.hasDoor && w.doorOpen) w.doorOpen = true;
+  state.operators = [];
+  state.selectedOpId = null;
+  state.mode = 'planning';
+  state.elapsedTime = 0;
+  state.roomCleared = false;
+  state.goCodesTriggered = { A: false, B: false, C: false };
+  state.interaction = { type: 'idle' };
+  state.popup = null;
+  resetOperatorId();
+  const entries = state.room.entryPoints;
+  for (let i = 0; i < buildOpCount; i++) {
+    let pos = { x: 500, y: 550 };
+    if (i < entries.length) pos = { x: entries[i].x, y: entries[i].y };
+    else if (entries.length > 0) {
+      const base = entries[entries.length - 1];
+      pos = { x: base.x + (i - entries.length + 1) * 35, y: base.y };
+    }
+    state.operators.push(createDeployedOperator(pos, i));
+  }
+  show('game');
+}
+
 // ---- Keyboard ----
 window.addEventListener('keydown', (e) => {
-  if (state.screen !== 'game') return;
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
+
+  // Build screen shortcuts
+  if (document.getElementById('build-screen')!.style.display !== 'none') {
+    if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undoHistory(); return; }
+    const toolKeys: Record<string, BuildToolType> = { '1': 'line', '2': 'square', '3': 'delete', '4': 'door', '5': 'threat', '6': 'entry' };
+    if (toolKeys[e.key]) {
+      buildTool = toolKeys[e.key];
+      document.querySelectorAll('.build-tool').forEach(b => b.classList.remove('active'));
+      document.querySelector(`.build-tool[data-tool="${buildTool}"]`)?.classList.add('active');
+      return;
+    }
+    if (e.key === 'Escape') { show('menu'); return; }
+    return;
+  }
+
+  if (state.screen !== 'game') return;
   switch (e.key) {
     case ' ':
       e.preventDefault();
@@ -237,25 +440,16 @@ function handleInput() {
   if (state.screen !== 'game') return;
   if (state.mode === 'executing') return;
   const inter = state.interaction;
-  const W = canvas.width, H = canvas.height;
 
-  // --- Popup click handling ---
   if (state.popup && input.justPressed) {
-    // Check if clicking within popup area (handled by renderer hit-test)
-    // For now just close popup on any click outside
     state.popup = null;
-    // Don't process further this frame
     return;
   }
 
-  // --- Deploying operator (drag from panel) ---
   if (inter.type === 'deploying_op') {
     const op = state.operators.find(o => o.id === inter.opId);
-    if (op && input.mouseDown) {
-      op.position = copy(input.mousePos);
-    }
+    if (op && input.mouseDown) op.position = copy(input.mousePos);
     if (input.justReleased && op) {
-      // If released on map area (not back on panel), deploy
       if (input.mousePos.x > DEPLOY_PANEL_W + 10) {
         op.deployed = true;
         op.startPosition = copy(op.position);
@@ -265,38 +459,24 @@ function handleInput() {
     return;
   }
 
-  // --- Moving deployed operator ---
   if (inter.type === 'moving_op') {
     const op = state.operators.find(o => o.id === inter.opId);
-    if (op && input.mouseDown) {
-      op.position = copy(input.mousePos);
-      op.startPosition = copy(op.position);
-    }
+    if (op && input.mouseDown) { op.position = copy(input.mousePos); op.startPosition = copy(op.position); }
     if (input.justReleased) state.interaction = { type: 'idle' };
     return;
   }
 
-  // --- Placing waypoints (click-to-place mode) ---
   if (inter.type === 'placing_waypoints') {
     const op = state.operators.find(o => o.id === inter.opId);
     if (input.justPressed && op) {
-      // Check if clicking near another operator or the deploy panel - cancel
-      if (input.mousePos.x < DEPLOY_PANEL_W) {
-        state.interaction = { type: 'idle' };
-        return;
-      }
-      // Add waypoint at click position
+      if (input.mousePos.x < DEPLOY_PANEL_W) { state.interaction = { type: 'idle' }; return; }
       op.path.waypoints.push(makeWaypoint(input.mousePos));
       rebuildPathLUT(op);
     }
-    // Right click = finish placing + set facing at last waypoint
-    if (input.rightJustPressed && op) {
-      state.interaction = { type: 'idle' };
-    }
+    if (input.rightJustPressed && op) state.interaction = { type: 'idle' };
     return;
   }
 
-  // --- Setting facing (right-drag) ---
   if (inter.type === 'setting_facing') {
     const op = state.operators.find(o => o.id === inter.opId);
     if (op && input.rightMouseDown) {
@@ -313,91 +493,64 @@ function handleInput() {
     return;
   }
 
-  // --- Dragging a waypoint node ---
   if (inter.type === 'dragging_node') {
     const op = state.operators.find(o => o.id === inter.opId);
-    if (op && input.mouseDown) {
-      op.path.waypoints[inter.wpIdx].position = copy(input.mousePos);
-      rebuildPathLUT(op);
-    }
+    if (op && input.mouseDown) { op.path.waypoints[inter.wpIdx].position = copy(input.mousePos); rebuildPathLUT(op); }
     if (input.justReleased) {
-      if (!input.isDragging) {
-        // Was a click, not drag - open popup
-        if (op) state.popup = { opId: op.id, wpIdx: inter.wpIdx, position: copy(op.path.waypoints[inter.wpIdx].position) };
-      }
+      if (!input.isDragging && op) state.popup = { opId: op.id, wpIdx: inter.wpIdx, position: copy(op.path.waypoints[inter.wpIdx].position) };
       state.interaction = { type: 'idle' };
     }
     return;
   }
 
-  // --- Setting look target ---
   if (inter.type === 'setting_look_target') {
     if (input.justPressed) {
       const op = state.operators.find(o => o.id === inter.opId);
-      if (op) {
-        op.path.waypoints[inter.wpIdx].lookTarget = copy(input.mousePos);
-        op.path.waypoints[inter.wpIdx].facingOverride = null;
-      }
+      if (op) { op.path.waypoints[inter.wpIdx].lookTarget = copy(input.mousePos); op.path.waypoints[inter.wpIdx].facingOverride = null; }
       state.interaction = { type: 'idle' };
     }
     return;
   }
 
-  // --- Tempo ring drag ---
   if (inter.type === 'tempo_ring') {
     if (input.mouseDown) {
       const op = state.operators.find(o => o.id === inter.opId);
       if (op) {
-        // Angle from center determines tempo (0.2 - 3.0)
         const target = inter.wpIdx !== null ? op.path.waypoints[inter.wpIdx] : null;
         const origin = target ? target.position : op.position;
         const a = Math.atan2(input.mousePos.y - origin.y, input.mousePos.x - origin.x);
-        // Map angle to tempo: right=1x, top=2x, left=3x, bottom=0.5x
-        // Normalize to 0..1 range around the circle
-        let norm = (a + Math.PI) / (2 * Math.PI); // 0..1
+        const norm = (a + Math.PI) / (2 * Math.PI);
         const tempo = Math.round((0.2 + norm * 2.8) * 10) / 10;
-        if (target) target.tempo = tempo;
-        else op.tempo = tempo;
+        if (target) target.tempo = tempo; else op.tempo = tempo;
       }
     }
     if (input.justReleased) state.interaction = { type: 'idle' };
     return;
   }
 
-  // ========== IDLE: New clicks ==========
-
-  // Right-click: set facing
+  // IDLE: new clicks
   if (input.rightJustPressed) {
     const selOp = state.operators.find(o => o.id === state.selectedOpId && o.deployed);
     if (selOp) {
-      // Check waypoints
       for (let i = 0; i < selOp.path.waypoints.length; i++) {
         if (distance(input.mousePos, selOp.path.waypoints[i].position) < NODE_R + 6) {
-          state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: i };
-          return;
+          state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: i }; return;
         }
       }
-      // Operator itself
       if (distance(input.mousePos, selOp.position) < OP_R + 8) {
-        state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: null };
-        return;
+        state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: null }; return;
       }
-      // Far right-click: set facing toward that point
       const dx = input.mousePos.x - selOp.position.x, dy = input.mousePos.y - selOp.position.y;
-      selOp.angle = Math.atan2(dy, dx);
-      selOp.startAngle = selOp.angle;
+      selOp.angle = Math.atan2(dy, dx); selOp.startAngle = selOp.angle;
     }
     return;
   }
 
-  // Left-click
   if (input.justPressed) {
-    // 1. Check deploy panel (undeployed operators)
     if (input.mousePos.x < DEPLOY_PANEL_W + 5) {
       const undeployed = state.operators.filter(o => !o.deployed);
       for (let i = 0; i < undeployed.length; i++) {
-        const py = 80 + i * 36;
-        if (Math.abs(input.mousePos.y - py) < 16) {
+        if (Math.abs(input.mousePos.y - (80 + i * 36)) < 16) {
           const op = undeployed[i];
           op.position = copy(input.mousePos);
           state.interaction = { type: 'deploying_op', opId: op.id };
@@ -408,16 +561,13 @@ function handleInput() {
       return;
     }
 
-    // 2. Check waypoint nodes of selected operator
     const selOp = state.operators.find(o => o.id === state.selectedOpId && o.deployed);
     if (selOp) {
       for (let i = 0; i < selOp.path.waypoints.length; i++) {
         if (distance(input.mousePos, selOp.path.waypoints[i].position) < NODE_R + 4) {
-          state.interaction = { type: 'dragging_node', opId: selOp.id, wpIdx: i };
-          return;
+          state.interaction = { type: 'dragging_node', opId: selOp.id, wpIdx: i }; return;
         }
       }
-      // 3. Check clicking on the path line to insert a node
       const lut = selOp.path.splineLUT;
       if (lut && lut.samples.length > 1) {
         let bestD = Infinity, bestI = -1;
@@ -438,24 +588,18 @@ function handleInput() {
       }
     }
 
-    // 4. Check deployed operators
     for (const op of state.operators) {
       if (!op.deployed) continue;
       if (distance(input.mousePos, op.position) < OP_R + 6) {
         if (state.selectedOpId === op.id) {
-          // Already selected - start moving or continue placing
           if (op.path.waypoints.length === 0) {
-            // No path yet - start placing waypoints. First wp = operator pos
             op.path.waypoints.push(makeWaypoint(op.position));
             state.interaction = { type: 'placing_waypoints', opId: op.id };
           } else {
-            // Has path - open popup or start moving
             state.interaction = { type: 'moving_op', opId: op.id };
           }
         } else {
-          state.selectedOpId = op.id;
-          state.popup = null;
-          // If no path, start placing
+          state.selectedOpId = op.id; state.popup = null;
           if (op.path.waypoints.length === 0) {
             op.path.waypoints.push(makeWaypoint(op.position));
             state.interaction = { type: 'placing_waypoints', opId: op.id };
@@ -465,15 +609,81 @@ function handleInput() {
       }
     }
 
-    // 5. If in placing_waypoints mode but didn't hit anything above,
-    //    the placing_waypoints handler at top would have caught it.
-    //    If we reach here, deselect.
     if (state.interaction.type === 'idle') {
-      state.selectedOpId = null;
-      state.popup = null;
+      state.selectedOpId = null; state.popup = null;
     }
   }
 }
+
+// ========== BUILD SCREEN INPUT ==========
+function buildPos(e: MouseEvent): Vec2 {
+  const r = buildCv.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * (buildCv.width / r.width), y: (e.clientY - r.top) * (buildCv.height / r.height) };
+}
+
+buildCv.addEventListener('mousemove', (e) => {
+  buildMousePos = buildPos(e);
+  if (buildTool === 'delete' || buildTool === 'door') {
+    buildHoveredWall = -1;
+    let best = 15;
+    for (let i = 0; i < customRoom.walls.length; i++) {
+      const d = distToSegment(buildMousePos, customRoom.walls[i].a, customRoom.walls[i].b);
+      if (d < best) { best = d; buildHoveredWall = i; }
+    }
+  }
+  if (buildMouseDown && buildDragStart) {
+    if (buildTool === 'line') buildDragEnd = snapAngle(buildDragStart, snapVec(buildMousePos));
+    else if (buildTool === 'square') buildDragEnd = snapVec(buildMousePos);
+  }
+});
+
+buildCv.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  const p = buildPos(e);
+  buildMouseDown = true;
+
+  if (buildTool === 'line' || buildTool === 'square') {
+    buildDragStart = snapVec(p); buildDragEnd = null;
+  } else if (buildTool === 'delete') {
+    if (buildHoveredWall >= 0) { pushHistory(); customRoom.walls.splice(buildHoveredWall, 1); buildHoveredWall = -1; updateFloor(); }
+  } else if (buildTool === 'door') {
+    if (buildHoveredWall >= 0) {
+      const w = customRoom.walls[buildHoveredWall];
+      pushHistory();
+      if (!w.hasDoor) { w.hasDoor = true; w.doorOpen = true; }
+      else if (w.doorOpen) { w.doorOpen = false; }
+      else { w.hasDoor = false; w.doorOpen = false; }
+    }
+  } else if (buildTool === 'threat') {
+    pushHistory(); customRoom.threats.push(makeThreat(snapGrid(p.x), snapGrid(p.y)));
+  } else if (buildTool === 'entry') {
+    pushHistory(); customRoom.entryPoints.push({ x: snapGrid(p.x), y: snapGrid(p.y) });
+  }
+});
+
+buildCv.addEventListener('mouseup', () => {
+  if (!buildMouseDown) return;
+  buildMouseDown = false;
+
+  if (buildTool === 'line' && buildDragStart && buildDragEnd) {
+    const s = buildDragStart, e = { x: snapGrid(buildDragEnd.x), y: snapGrid(buildDragEnd.y) };
+    if (distance(s, e) > GRID * 0.5) { pushHistory(); customRoom.walls.push(makeWall(s.x, s.y, e.x, e.y)); updateFloor(); }
+  } else if (buildTool === 'square' && buildDragStart && buildDragEnd) {
+    const s = buildDragStart, e = buildDragEnd;
+    const x0 = Math.min(s.x, e.x), y0 = Math.min(s.y, e.y), x1 = Math.max(s.x, e.x), y1 = Math.max(s.y, e.y);
+    if (x1 - x0 > GRID * 0.5 && y1 - y0 > GRID * 0.5) {
+      pushHistory();
+      customRoom.walls.push(makeWall(x0, y0, x1, y0)); // top
+      customRoom.walls.push(makeWall(x1, y0, x1, y1)); // right
+      customRoom.walls.push(makeWall(x1, y1, x0, y1)); // bottom
+      customRoom.walls.push(makeWall(x0, y1, x0, y0)); // left
+      updateFloor();
+    }
+  }
+  buildDragStart = null; buildDragEnd = null;
+});
+
+buildCv.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ---- Game Loop ----
 function update(dt: number) {
@@ -485,6 +695,219 @@ function update(dt: number) {
 
 function renderFrame() {
   if (state.screen === 'game') renderGame(canvas, state);
+  if (document.getElementById('build-screen')!.style.display !== 'none') renderBuild();
+}
+
+// ========== BUILD CANVAS RENDERING ==========
+function renderBuild() {
+  const ctx = buildCv.getContext('2d')!;
+  const W = buildCv.width, H = buildCv.height;
+  buildAnimT += 0.016;
+
+  // Background
+  ctx.fillStyle = '#080e12';
+  ctx.fillRect(0, 0, W, H);
+
+  // Floor
+  if (customRoom.floor.length >= 3) {
+    ctx.beginPath();
+    ctx.moveTo(customRoom.floor[0].x, customRoom.floor[0].y);
+    for (let i = 1; i < customRoom.floor.length; i++) ctx.lineTo(customRoom.floor[i].x, customRoom.floor[i].y);
+    ctx.closePath();
+    ctx.fillStyle = '#1a1814';
+    ctx.fill();
+  }
+
+  // Grid dots
+  ctx.fillStyle = 'rgba(68,187,170,0.06)';
+  for (let x = 0; x <= W; x += GRID) for (let y = 0; y <= H; y += GRID) {
+    ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Crosshair guide lines
+  if (buildTool !== 'delete' && buildTool !== 'door') {
+    const sx = snapGrid(buildMousePos.x), sy = snapGrid(buildMousePos.y);
+    ctx.strokeStyle = 'rgba(68,187,170,0.08)';
+    ctx.lineWidth = 1; ctx.setLineDash([4, 10]);
+    ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(W, sy); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // ---- Walls ----
+  for (let i = 0; i < customRoom.walls.length; i++) {
+    const w = customRoom.walls[i];
+    const hover = i === buildHoveredWall && (buildTool === 'delete' || buildTool === 'door');
+    drawBuildWall(ctx, w, hover);
+  }
+
+  // ---- Preview: Line ----
+  if (buildTool === 'line' && buildDragStart && buildDragEnd) {
+    const s = buildDragStart, e = { x: snapGrid(buildDragEnd.x), y: snapGrid(buildDragEnd.y) };
+    ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(68,187,170,0.45)'; ctx.lineWidth = 8;
+    ctx.setLineDash([10, 6]);
+    ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
+    ctx.setLineDash([]);
+    // Endpoints
+    ctx.fillStyle = '#44bbaa';
+    ctx.beginPath(); ctx.arc(s.x, s.y, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(e.x, e.y, 5, 0, Math.PI * 2); ctx.fill();
+    // Angle + length label
+    const dx = e.x - s.x, dy = e.y - s.y;
+    const deg = Math.round(Math.atan2(-dy, dx) * 180 / Math.PI);
+    const len = Math.round(distance(s, e));
+    ctx.fillStyle = 'rgba(68,187,170,0.8)'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText(`${deg}\u00B0  ${len}px`, (s.x + e.x) / 2, (s.y + e.y) / 2 - 14);
+  }
+
+  // ---- Preview: Square ----
+  if (buildTool === 'square' && buildDragStart && buildDragEnd) {
+    const s = buildDragStart, e = buildDragEnd;
+    const x0 = Math.min(s.x, e.x), y0 = Math.min(s.y, e.y), x1 = Math.max(s.x, e.x), y1 = Math.max(s.y, e.y);
+    ctx.strokeStyle = 'rgba(68,187,170,0.45)'; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.setLineDash([10, 6]);
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.setLineDash([]);
+    // Corner dots
+    ctx.fillStyle = '#44bbaa';
+    for (const p of [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }]) {
+      ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
+    }
+    // Size label
+    ctx.fillStyle = 'rgba(68,187,170,0.8)'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText(`${x1 - x0} \u00D7 ${y1 - y0}`, (x0 + x1) / 2, y0 - 10);
+  }
+
+  // ---- Threats ----
+  for (const t of customRoom.threats) {
+    ctx.fillStyle = 'rgba(200,50,50,0.12)';
+    ctx.beginPath(); ctx.arc(t.position.x, t.position.y, 16, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#cc3333'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(t.position.x - 6, t.position.y - 6); ctx.lineTo(t.position.x + 6, t.position.y + 6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(t.position.x + 6, t.position.y - 6); ctx.lineTo(t.position.x - 6, t.position.y + 6); ctx.stroke();
+    ctx.fillStyle = 'rgba(204,51,51,0.5)'; ctx.font = '8px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText('THREAT', t.position.x, t.position.y + 10);
+  }
+
+  // ---- Entry Points ----
+  for (let i = 0; i < customRoom.entryPoints.length; i++) {
+    const ep = customRoom.entryPoints[i];
+    const pulse = buildAnimT * 20;
+    ctx.strokeStyle = '#44bbaa'; ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]); ctx.lineDashOffset = pulse;
+    ctx.beginPath(); ctx.arc(ep.x, ep.y, 12, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]); ctx.lineDashOffset = 0;
+    ctx.fillStyle = '#44bbaa'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('\u2193', ep.x, ep.y);
+    ctx.fillStyle = 'rgba(68,187,170,0.5)'; ctx.font = '8px monospace'; ctx.textBaseline = 'top';
+    ctx.fillText(`ENTRY ${i + 1}`, ep.x, ep.y + 16);
+  }
+
+  // Snap cursor dot
+  if (buildTool !== 'delete' && buildTool !== 'door') {
+    const sx = snapGrid(buildMousePos.x), sy = snapGrid(buildMousePos.y);
+    ctx.fillStyle = 'rgba(68,187,170,0.3)';
+    ctx.beginPath(); ctx.arc(sx, sy, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(68,187,170,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(sx, sy, 4, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // Delete cursor
+  if (buildTool === 'delete' && buildHoveredWall < 0) {
+    ctx.strokeStyle = 'rgba(255,80,60,0.25)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(buildMousePos.x - 6, buildMousePos.y - 6); ctx.lineTo(buildMousePos.x + 6, buildMousePos.y + 6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(buildMousePos.x + 6, buildMousePos.y - 6); ctx.lineTo(buildMousePos.x - 6, buildMousePos.y + 6); ctx.stroke();
+  }
+
+  // Door hover ring
+  if (buildTool === 'door' && buildHoveredWall >= 0) {
+    const w = customRoom.walls[buildHoveredWall];
+    const cx = (w.a.x + w.b.x) / 2, cy = (w.a.y + w.b.y) / 2;
+    const p = 0.5 + 0.5 * Math.sin(buildAnimT * 4);
+    ctx.strokeStyle = `rgba(192,160,96,${0.3 + p * 0.4})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, 12 + p * 3, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // Tool info HUD
+  const toolLabel: Record<BuildToolType, string> = {
+    line: 'LINE', square: 'SQUARE', delete: 'DELETE', door: 'DOOR', threat: 'THREAT', entry: 'ENTRY',
+  };
+  const toolHint: Record<BuildToolType, string> = {
+    line: 'Drag to draw a wall. Snaps to 15\u00B0 increments.',
+    square: 'Drag to create a rectangle of 4 walls.',
+    delete: 'Click on any wall to remove it.',
+    door: 'Click wall: Add opening \u2192 Close door \u2192 Remove.',
+    threat: 'Click to place a threat marker.',
+    entry: 'Click to place an operator entry point.',
+  };
+  ctx.fillStyle = 'rgba(8,14,18,0.85)';
+  ctx.fillRect(6, 6, 320, 32);
+  ctx.strokeStyle = 'rgba(68,187,170,0.2)'; ctx.lineWidth = 1;
+  ctx.strokeRect(6, 6, 320, 32);
+  ctx.fillStyle = '#44bbaa'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText(toolLabel[buildTool], 14, 11);
+  ctx.fillStyle = 'rgba(138,170,153,0.6)'; ctx.font = '9px monospace';
+  ctx.fillText(toolHint[buildTool], 14 + ctx.measureText(toolLabel[buildTool] + '  ').width + 8, 13);
+
+  // Stats bar
+  ctx.fillStyle = 'rgba(8,14,18,0.75)'; ctx.fillRect(0, H - 22, W, 22);
+  ctx.strokeStyle = 'rgba(68,187,170,0.1)'; ctx.beginPath(); ctx.moveTo(0, H - 22); ctx.lineTo(W, H - 22); ctx.stroke();
+  ctx.fillStyle = 'rgba(138,170,153,0.45)'; ctx.font = '9px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const doors = customRoom.walls.filter(w => w.hasDoor).length;
+  ctx.fillText(`Walls: ${customRoom.walls.length}  Doors: ${doors}  Threats: ${customRoom.threats.length}  Entries: ${customRoom.entryPoints.length}`, 10, H - 11);
+  ctx.textAlign = 'right';
+  ctx.fillText('[1-6] Tools  [Ctrl+Z] Undo', W - 10, H - 11);
+}
+
+function drawBuildWall(ctx: CanvasRenderingContext2D, w: { a: Vec2; b: Vec2; hasDoor: boolean; doorOpen: boolean }, hover: boolean) {
+  const { a, b } = w;
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 1) return;
+
+  if (w.hasDoor) {
+    const f = Math.min(DOOR_W / len, 0.9), gs = 0.5 - f / 2, ge = 0.5 + f / 2;
+    // Wall segments
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = hover ? '#ff6655' : '#d8cbb0';
+    ctx.lineWidth = hover ? 10 : WALL_W;
+    if (gs > 0.02) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x + dx * gs, a.y + dy * gs); ctx.stroke(); }
+    if (ge < 0.98) { ctx.beginPath(); ctx.moveTo(a.x + dx * ge, a.y + dy * ge); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+    // Door frame
+    const nx = -dy / len, ny = dx / len;
+    const dsx = a.x + dx * gs, dsy = a.y + dy * gs, dex = a.x + dx * ge, dey = a.y + dy * ge;
+    if (w.doorOpen) {
+      // Open: just frame marks, no door panel
+      ctx.strokeStyle = '#5a8a5a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(dsx + nx * 6, dsy + ny * 6); ctx.lineTo(dsx - nx * 6, dsy - ny * 6); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(dex + nx * 6, dey + ny * 6); ctx.lineTo(dex - nx * 6, dey - ny * 6); ctx.stroke();
+      ctx.fillStyle = 'rgba(90,138,90,0.6)'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('OPEN', (a.x + b.x) / 2, (a.y + b.y) / 2);
+    } else {
+      // Closed: door panel across gap
+      ctx.strokeStyle = '#8a6a3a'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(dsx, dsy); ctx.lineTo(dex, dey); ctx.stroke();
+      ctx.strokeStyle = '#8a6a3a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(dsx + nx * 6, dsy + ny * 6); ctx.lineTo(dsx - nx * 6, dsy - ny * 6); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(dex + nx * 6, dey + ny * 6); ctx.lineTo(dex - nx * 6, dey - ny * 6); ctx.stroke();
+      ctx.fillStyle = '#c0a060'; ctx.beginPath();
+      ctx.arc((dsx + dex) / 2 + nx * 3, (dsy + dey) / 2 + ny * 3, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(138,106,58,0.6)'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('DOOR', (a.x + b.x) / 2, (a.y + b.y) / 2 - 12);
+    }
+  } else {
+    // Regular wall: outline + fill
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = hover && buildTool === 'delete' ? 'rgba(255,80,60,0.25)' : 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = hover ? 12 : WALL_W + 2;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    ctx.strokeStyle = hover && buildTool === 'delete' ? '#ff6655' : hover && buildTool === 'door' ? '#c0a060' : '#d8cbb0';
+    ctx.lineWidth = WALL_W;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    // Endpoint dots
+    ctx.fillStyle = hover ? '#fff' : '#c8bca8';
+    ctx.beginPath(); ctx.arc(a.x, a.y, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, Math.PI * 2); ctx.fill();
+  }
 }
 
 startGameLoop(update, renderFrame);

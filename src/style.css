@@ -477,3 +477,208 @@ body {
   height: 100%;
   cursor: crosshair;
 }
+
+/* ======================================
+   BUILD — Room Builder
+   ====================================== */
+
+#build-screen {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100vh;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+}
+
+.build-layout {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 20px;
+  align-items: stretch;
+  max-height: 90vh;
+  animation: cardEnter 0.5s var(--ease-out) both;
+}
+
+.build-canvas-area {
+  position: relative;
+  flex-shrink: 0;
+}
+
+#build-cv {
+  display: block;
+  width: 800px;
+  height: 600px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: crosshair;
+  background: #080e12;
+  box-shadow:
+    0 0 60px rgba(0,0,0,0.4),
+    inset 0 0 0 1px rgba(68,187,170,0.03);
+}
+
+.build-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 240px;
+  padding: 20px;
+  background: linear-gradient(170deg, var(--panel) 0%, var(--bg-mid) 100%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+  overflow-y: auto;
+  max-height: 600px;
+}
+
+.build-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: 3px;
+  text-shadow: 0 0 20px rgba(68,187,170,0.2);
+}
+
+.build-tools-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.build-tools-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.build-tool {
+  font-family: var(--mono);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px 8px;
+  background: var(--bg-mid);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.18s var(--ease-out);
+  position: relative;
+  color: var(--text-muted);
+}
+
+.build-tool:hover {
+  background: var(--panel-light);
+  border-color: var(--border-light);
+  color: var(--text-bright);
+  transform: translateY(-1px);
+}
+
+.build-tool.active {
+  background: rgba(68,187,170,0.1);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow:
+    0 0 12px rgba(68,187,170,0.15),
+    inset 0 0 0 1px rgba(68,187,170,0.08);
+}
+
+.build-tool-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.build-tool span {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.build-tool kbd {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--text-muted);
+  opacity: 0.4;
+  pointer-events: none;
+}
+.build-tool.active kbd { color: var(--accent); opacity: 0.6; }
+
+.build-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+}
+
+.build-actions-row {
+  display: flex;
+  gap: 6px;
+}
+
+.build-action-btn {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 7px 10px;
+  background: var(--bg-mid);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.18s var(--ease-out);
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.build-action-btn:hover {
+  background: var(--panel-light);
+  color: var(--text);
+  border-color: var(--border-light);
+}
+
+.build-action-danger:hover {
+  border-color: #553333;
+  color: #cc6655;
+  background: rgba(200,80,60,0.08);
+}
+
+.build-textarea {
+  font-family: var(--mono);
+  font-size: 9px;
+  background: var(--bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 8px;
+  resize: vertical;
+  line-height: 1.4;
+  transition: border-color 0.2s;
+}
+.build-textarea:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+  color: var(--text);
+}
+
+.build-play-btn {
+  margin-top: auto;
+  padding: 12px 20px;
+  font-size: 13px;
+}
+
+.build-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-top: -8px;
+}

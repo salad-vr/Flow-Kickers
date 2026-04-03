@@ -3,7 +3,7 @@ import type { SplineLUT } from './math/spline';
 
 export interface WallSegment { a: Vec2; b: Vec2; hasDoor: boolean; doorOpen: boolean; }
 export interface ThreatMarker { position: Vec2; neutralized: boolean; neutralizeTimer: number; }
-export interface Room { walls: WallSegment[]; threats: ThreatMarker[]; floor: Vec2[]; name: string; }
+export interface Room { walls: WallSegment[]; threats: ThreatMarker[]; floor: Vec2[]; name: string; entryPoints: Vec2[]; }
 
 export interface Waypoint {
   position: Vec2;

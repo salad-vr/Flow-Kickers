@@ -30,5 +30,5 @@ export function getWallsForCollision(room: Room): Wall[] {
 }
 
 export function createEmptyRoom(): Room {
-  return { walls: [], threats: [], floor: [], name: 'Custom Room' };
+  return { walls: [], threats: [], floor: [], name: 'Custom Room', entryPoints: [] };
 }
