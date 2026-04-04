@@ -52,12 +52,21 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
   for (let x = gx0; x <= viewRight; x += gridStep) { ctx.beginPath(); ctx.moveTo(x, viewTop); ctx.lineTo(x, viewBottom); ctx.stroke(); }
   for (let y = gy0; y <= viewBottom; y += gridStep) { ctx.beginPath(); ctx.moveTo(viewLeft, y); ctx.lineTo(viewRight, y); ctx.stroke(); }
 
-  // FOV cones
+  // FOV cones (clipped to floor area so they don't bleed into the void)
   const isExecMode = state.mode === 'executing' || state.mode === 'paused';
-  for (const op of state.operators) {
-    if (!op.deployed) continue;
-    const grey = sid !== null && op.id !== sid;
-    drawFOV(ctx, op, walls, grey, isExecMode);
+  if (fl.length > 0) {
+    ctx.save();
+    ctx.beginPath();
+    for (const cell of fl) {
+      ctx.rect(cell.x, cell.y, GRID, GRID);
+    }
+    ctx.clip();
+    for (const op of state.operators) {
+      if (!op.deployed) continue;
+      const grey = sid !== null && op.id !== sid;
+      drawFOV(ctx, op, walls, grey, isExecMode);
+    }
+    ctx.restore();
   }
 
   // Threats
