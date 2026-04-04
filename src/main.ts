@@ -1194,19 +1194,20 @@ function handleInput() {
       // Check mark button (right side of node)
       const checkX = sp2.x + 14, checkY = sp2.y - 8, btnSize = 16;
       if (hitBtn(input.mousePos, checkX, checkY, btnSize, btnSize)) {
-        // Confirm: keep the node, clear pending
+        // Confirm: keep the node, exit placing mode back to idle (selection mode)
+        // Operator stays selected so user can drag nodes, set directions, etc.
         state.pendingNode = null;
-        // Stay in placing_waypoints mode so they can continue
+        state.interaction = { type: 'idle' };
         return;
       }
       // X button (left side of node)
       const cancelX = sp2.x - 14 - btnSize, cancelY = sp2.y - 8;
       if (hitBtn(input.mousePos, cancelX, cancelY, btnSize, btnSize)) {
-        // Cancel: remove the node
+        // Cancel: remove the node, exit placing mode
         op.path.waypoints.splice(pn.wpIdx, 1);
         rebuildPathLUT(op);
         state.pendingNode = null;
-        // Stay in placing_waypoints mode
+        state.interaction = { type: 'idle' };
         return;
       }
     }
