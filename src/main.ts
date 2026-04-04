@@ -1154,6 +1154,7 @@ const OP_RADIAL_ITEMS: RadialMenuItem[] = [
   { id: 'direction', icon: 'direction', label: 'Direction' },
   { id: 'pie',       icon: 'pie',       label: 'Pie' },
   { id: 'route',     icon: 'route',     label: 'Route' },
+  { id: 'speed',     icon: 'speed',     label: 'Speed' },
 ];
 
 const NODE_RADIAL_ITEMS: RadialMenuItem[] = [
@@ -1375,6 +1376,11 @@ function handleInput() {
                 op.path.splineLUT = null;
               }
               state.interaction = { type: 'placing_waypoints', opId: op.id };
+            } else if (item.id === 'speed') {
+              const cam2 = state.camera;
+              const sp2 = { x: (op.position.x - cam2.x) * cam2.zoom + canvas.width / 2, y: (op.position.y - cam2.y) * cam2.zoom + canvas.height / 2 };
+              state.speedSlider = { screenPos: { x: sp2.x + 20, y: sp2.y + 20 }, value: op.tempo, dragging: false };
+              state.interaction = { type: 'speed_slider', opId: op.id, wpIdx: null, sliderValue: op.tempo };
             }
           } else {
             // Node radial menu actions

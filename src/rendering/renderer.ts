@@ -432,6 +432,7 @@ const OP_RADIAL_ITEMS: RadialMenuItem[] = [
   { id: 'direction', icon: 'direction', label: 'Direction' },
   { id: 'pie',       icon: 'pie',       label: 'Pie' },
   { id: 'route',     icon: 'route',     label: 'Route' },
+  { id: 'speed',     icon: 'speed',     label: 'Speed' },
 ];
 const NODE_RADIAL_ITEMS: RadialMenuItem[] = [
   { id: 'direction', icon: 'direction', label: 'Direction' },
@@ -541,12 +542,21 @@ function drawRadialIcon(ctx: CanvasRenderingContext2D, cx: number, cy: number, i
     ctx.moveTo(-4, 0); ctx.lineTo(4, 0);
     ctx.stroke();
   } else if (icon === 'speed') {
-    // Speedometer/gauge lines
+    // Hourglass icon
     ctx.beginPath();
-    ctx.arc(0, 1, 4, Math.PI, 0);
+    // Top triangle
+    ctx.moveTo(-3, -5); ctx.lineTo(3, -5); ctx.lineTo(0, -1);
+    ctx.closePath();
     ctx.stroke();
+    // Bottom triangle
     ctx.beginPath();
-    ctx.moveTo(0, 1); ctx.lineTo(2, -2);
+    ctx.moveTo(-3, 5); ctx.lineTo(3, 5); ctx.lineTo(0, 1);
+    ctx.closePath();
+    ctx.stroke();
+    // Top and bottom bars
+    ctx.beginPath();
+    ctx.moveTo(-4, -5); ctx.lineTo(4, -5);
+    ctx.moveTo(-4, 5); ctx.lineTo(4, 5);
     ctx.stroke();
   } else if (icon === 'delete') {
     // X mark
