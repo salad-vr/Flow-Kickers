@@ -1224,6 +1224,16 @@ button:focus-visible,
   right: 4px;
 }
 
+.in-progress-card:hover .in-progress-delete {
+  opacity: 0.6;
+}
+
+.in-progress-delete:hover {
+  opacity: 1 !important;
+  background: rgba(180, 70, 50, 0.2);
+  color: #cc7766;
+}
+
 /* ---- Music Toggle Button ---- */
 .music-toggle-btn {
   position: fixed;
