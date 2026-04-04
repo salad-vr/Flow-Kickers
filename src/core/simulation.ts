@@ -20,7 +20,7 @@ export function resetSimulation(state: GameState) {
   state.goCodesTriggered = { A: false, B: false, C: false };
   for (const op of state.operators) resetOperator(op);
   for (const t of state.room.threats) { t.neutralized = false; t.neutralizeTimer = 0; }
-  for (const w of state.room.walls) { if (w.hasDoor) w.doorOpen = true; }
+  for (const w of state.room.walls) for (const d of w.doors) d.open = true;
 }
 
 export function triggerGoCode(state: GameState, code: GoCode) { state.goCodesTriggered[code] = true; }

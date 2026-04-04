@@ -479,65 +479,291 @@ button:focus-visible,
 }
 
 /* ===================================
-   TUTORIAL
+   TUTORIAL — Slide Deck
    =================================== */
 
-.tut-content {
-  max-width: 520px;
+.tut-deck {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 520px;
+  max-width: 95vw;
+  animation: cardIn 0.5s ease-out both;
 }
 
-/* Stagger tutorial steps */
-.tut-content .tut-step:nth-child(1) { animation: fadeSlideUp 0.35s var(--ease-out-expo) 0.1s both; }
-.tut-content .tut-step:nth-child(2) { animation: fadeSlideUp 0.35s var(--ease-out-expo) 0.15s both; }
-.tut-content .tut-step:nth-child(3) { animation: fadeSlideUp 0.35s var(--ease-out-expo) 0.2s both; }
-.tut-content .tut-step:nth-child(4) { animation: fadeSlideUp 0.35s var(--ease-out-expo) 0.25s both; }
-.tut-content .tut-step:nth-child(5) { animation: fadeSlideUp 0.35s var(--ease-out-expo) 0.3s both; }
-.tut-content .tut-step:nth-child(6) { animation: fadeSlideUp 0.35s var(--ease-out-expo) 0.35s both; }
+/* Slide track */
+.tut-slides {
+  display: flex;
+  width: 100%;
+  transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  will-change: transform;
+}
 
-.tut-heading {
+/* Individual slide */
+.tut-slide {
+  min-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 0 10px;
+}
+
+/* Animated SVG visual area */
+.tut-visual {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+  border: 1px solid var(--navy-600);
+}
+
+.tut-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Text area below visual */
+.tut-text {
+  text-align: center;
+  max-width: 400px;
+}
+
+.tut-slide-title {
   font-family: 'Georgia', 'Times New Roman', serif;
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 700;
   font-style: italic;
   color: var(--cream-bright);
-  letter-spacing: 1px;
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
 }
 
-.tut-steps {
+.tut-text p {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--cream-dim);
+}
+
+.tut-text b {
+  color: var(--cream-bright);
+  font-weight: 600;
+}
+
+/* Navigation */
+.tut-nav {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  width: 100%;
+  align-items: center;
+  gap: 16px;
 }
 
-.tut-step {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-}
-
-.tut-num {
+.tut-nav-btn {
+  font-family: var(--font);
+  font-size: 18px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 28px;
-  height: 28px;
-  background: var(--cream);
-  color: var(--navy-900);
-  font-family: var(--mono);
-  font-weight: 800;
-  font-size: 12px;
+  background: var(--navy-700);
+  color: var(--cream-dim);
+  border: 1px solid var(--navy-600);
   border-radius: 50%;
-  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.tut-step span:last-child {
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--cream-dim);
-  padding-top: 3px;
+.tut-nav-btn:hover:not(:disabled) {
+  background: var(--navy-600);
+  color: var(--cream-bright);
+  border-color: var(--navy-500);
 }
-.tut-step b { color: var(--cream-bright); font-weight: 600; }
+
+.tut-nav-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+/* Dots */
+.tut-dots {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tut-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: none;
+  background: var(--navy-600);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.25s ease;
+}
+
+.tut-dot.active {
+  background: var(--cream);
+  width: 22px;
+  border-radius: 4px;
+}
+
+.tut-dot:hover:not(.active) {
+  background: var(--navy-500);
+}
+
+/* Back button */
+.tut-back-btn {
+  width: auto;
+  min-width: 180px;
+  padding: 12px 32px;
+  font-size: 13px;
+}
+
+/* ---- SVG Animations ---- */
+
+/* Dashed line flow (deploy drag arrow) */
+.tut-anim-dashflow {
+  stroke-dashoffset: 0;
+  animation: dashFlow 2s linear infinite;
+}
+@keyframes dashFlow {
+  to { stroke-dashoffset: -20; }
+}
+
+/* Deploy cursor movement */
+.tut-anim-cursor-deploy {
+  animation: cursorDeploy 3s ease-in-out infinite;
+}
+@keyframes cursorDeploy {
+  0%, 10%  { transform: translate(30px, 138px); opacity: 0.8; }
+  50%, 60% { transform: translate(150px, 80px); opacity: 0.8; }
+  70%      { transform: translate(150px, 80px); opacity: 0; }
+  100%     { transform: translate(30px, 138px); opacity: 0; }
+}
+
+/* Landing operator fade in */
+.tut-anim-land {
+  animation: opLand 3s ease-in-out infinite;
+}
+@keyframes opLand {
+  0%, 40% { opacity: 0; }
+  55%, 65% { opacity: 0.8; }
+  80%, 100% { opacity: 0.35; }
+}
+
+/* Path growing (drawing waypoints) */
+.tut-anim-pathgrow {
+  stroke-dasharray: 200;
+  stroke-dashoffset: 200;
+  animation: pathGrow 2.5s ease-out forwards infinite;
+}
+@keyframes pathGrow {
+  0%   { stroke-dashoffset: 200; }
+  60%  { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 0; }
+}
+
+/* Waypoint nodes pop in */
+.tut-anim-nodepop1 { animation: nodePop 2.5s ease-out infinite; }
+.tut-anim-nodepop2 { animation: nodePop 2.5s ease-out 0.3s infinite; }
+.tut-anim-nodepop3 { animation: nodePop 2.5s ease-out 0.6s infinite; }
+@keyframes nodePop {
+  0%, 15%  { transform: scale(0); opacity: 0; }
+  25%, 100% { transform: scale(1); opacity: 1; }
+}
+
+/* FOV sweep */
+.tut-anim-fovsweep {
+  transform-origin: 110px 90px;
+  animation: fovSweep 3s ease-in-out infinite;
+}
+@keyframes fovSweep {
+  0%   { transform: rotate(-15deg); opacity: 0.08; }
+  50%  { transform: rotate(15deg); opacity: 0.15; }
+  100% { transform: rotate(-15deg); opacity: 0.08; }
+}
+
+/* Look target pulse */
+.tut-anim-looktarget {
+  animation: lookPulse 2s ease-in-out infinite;
+}
+@keyframes lookPulse {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+/* Facing line rotate */
+.tut-anim-facingline {
+  animation: facingRotate 3s ease-in-out infinite;
+}
+@keyframes facingRotate {
+  0%   { opacity: 0.6; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+/* Radial menu pop */
+.tut-anim-radial {
+  animation: radialPop 0.5s ease-out both;
+}
+@keyframes radialPop {
+  from { transform: scale(0.7); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+/* Operator moving along path */
+.tut-anim-opmove {
+  animation: opMove 3s ease-in-out infinite;
+}
+@keyframes opMove {
+  0%   { transform: translate(0, 0); }
+  50%  { transform: translate(40px, -15px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* FOV cone moving with operator */
+.tut-anim-fovmove {
+  animation: fovMove 3s ease-in-out infinite;
+}
+@keyframes fovMove {
+  0%   { transform: translate(0, 0); opacity: 0.06; }
+  50%  { transform: translate(40px, -15px); opacity: 0.1; }
+  100% { transform: translate(0, 0); opacity: 0.06; }
+}
+
+/* Threat blink */
+.tut-anim-threat {
+  animation: threatBlink 1.5s ease-in-out infinite;
+}
+@keyframes threatBlink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
+/* Stage arrow pulse */
+.tut-anim-stagearrow {
+  animation: stageArrow 1.5s ease-in-out infinite;
+}
+@keyframes stageArrow {
+  0%, 100% { opacity: 0.4; transform: translateX(0); }
+  50%      { opacity: 1; transform: translateX(3px); }
+}
+
+/* Click ring animations */
+.tut-anim-clicks circle:nth-child(1) { animation: clickRing 2.5s ease-out infinite; }
+.tut-anim-clicks circle:nth-child(2) { animation: clickRing 2.5s ease-out 0.4s infinite; }
+.tut-anim-clicks circle:nth-child(3) { animation: clickRing 2.5s ease-out 0.8s infinite; }
+@keyframes clickRing {
+  0%, 10%  { r: 3; opacity: 0.6; }
+  30%      { r: 9; opacity: 0; }
+  100%     { r: 9; opacity: 0; }
+}
 
 /* ===================================
    GAME

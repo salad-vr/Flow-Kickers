@@ -63,17 +63,275 @@ app.innerHTML = `
 </div>
 
 <div id="tut-screen" style="display:none">
-  <div class="menu-content tut-content">
-    <h2 class="tut-heading">How to Play</h2>
-    <div class="tut-steps">
-      <div class="tut-step"><span class="tut-num">1</span><span>Drag operators from the left panel onto the map to deploy them</span></div>
-      <div class="tut-step"><span class="tut-num">2</span><span>Click a deployed operator, then click on the map to place waypoints</span></div>
-      <div class="tut-step"><span class="tut-num">3</span><span>Right-click + drag to set <b>facing direction</b> at any point</span></div>
-      <div class="tut-step"><span class="tut-num">4</span><span>Click a waypoint node to open options: hold, speed, delete, look-at</span></div>
-      <div class="tut-step"><span class="tut-num">5</span><span>Press <b>Space</b> or click <b>GO</b> to execute the plan</span></div>
-      <div class="tut-step"><span class="tut-num">6</span><span>Pause with <b>Space</b>, reset with <b>R</b></span></div>
+  <div class="tut-deck">
+    <div class="tut-slides" id="tut-slides">
+
+      <!-- Slide 1: Deploy -->
+      <div class="tut-slide">
+        <div class="tut-visual">
+          <svg viewBox="0 0 280 160" class="tut-svg">
+            <rect x="0" y="0" width="280" height="160" rx="6" fill="#111d33"/>
+            <!-- Room -->
+            <rect x="100" y="30" width="140" height="100" rx="2" fill="#1e3352" stroke="#274166" stroke-width="1.5"/>
+            <!-- Deploy panel -->
+            <rect x="10" y="110" width="80" height="36" rx="4" fill="rgba(12,21,37,0.9)" stroke="#274166" stroke-width="1" stroke-dasharray="4 3"/>
+            <text x="50" y="124" text-anchor="middle" fill="#8a836e" font-size="5" font-family="monospace" letter-spacing="0.5">DRAG TO DEPLOY</text>
+            <!-- Operator in panel -->
+            <g class="tut-anim-deploy">
+              <polygon points="30,138 22,132 26,138 22,144" fill="#c8bb96" stroke="#5588cc" stroke-width="1.5"/>
+              <text x="27" y="140" text-anchor="middle" fill="white" font-size="5" font-weight="bold" font-family="monospace">A</text>
+            </g>
+            <!-- Ghost arrow showing drag path -->
+            <path d="M35,138 C60,130 100,100 150,80" fill="none" stroke="#e8dfc6" stroke-width="1" stroke-dasharray="3 3" opacity=".3" class="tut-anim-dashflow"/>
+            <!-- Operator at destination -->
+            <g class="tut-anim-land" opacity="0.35">
+              <polygon points="155,80 147,74 151,80 147,86" fill="#c8bb96" stroke="#5588cc" stroke-width="1.5"/>
+              <text x="152" y="82" text-anchor="middle" fill="white" font-size="5" font-weight="bold" font-family="monospace">A</text>
+            </g>
+            <!-- Cursor -->
+            <g class="tut-anim-cursor-deploy">
+              <circle r="4" fill="none" stroke="#e8dfc6" stroke-width="1" opacity=".6"/>
+            </g>
+          </svg>
+        </div>
+        <div class="tut-text">
+          <h3 class="tut-slide-title">Deploy Operators</h3>
+          <p>Drag operators from the <b>bottom panel</b> onto the map to position them. Place them near doors and entry points to prepare your breach.</p>
+        </div>
+      </div>
+
+      <!-- Slide 2: Draw Route -->
+      <div class="tut-slide">
+        <div class="tut-visual">
+          <svg viewBox="0 0 280 160" class="tut-svg">
+            <rect x="0" y="0" width="280" height="160" rx="6" fill="#111d33"/>
+            <rect x="60" y="20" width="180" height="120" rx="2" fill="#1e3352" stroke="#274166" stroke-width="1.5"/>
+            <!-- Operator -->
+            <polygon points="85,115 77,109 81,115 77,121" fill="#c8bb96" stroke="#5588cc" stroke-width="1.5"/>
+            <text x="82" y="117" text-anchor="middle" fill="white" font-size="5" font-weight="bold" font-family="monospace">A</text>
+            <!-- Radial menu hint -->
+            <circle cx="85" cy="115" r="16" fill="none" stroke="#e8dfc6" stroke-width="0.5" opacity=".3" stroke-dasharray="2 2"/>
+            <text x="85" y="96" text-anchor="middle" fill="#e8dfc6" font-size="6" font-family="monospace" opacity=".5">click</text>
+            <!-- Path with waypoints -->
+            <path d="M85,115 C100,100 130,60 160,55 S210,50 220,70" fill="none" stroke="#5588cc" stroke-width="1.5" stroke-dasharray="4 3" class="tut-anim-pathgrow"/>
+            <!-- Waypoint nodes -->
+            <circle cx="130" cy="68" r="3.5" fill="#274166" stroke="#5588cc" stroke-width="1.2" class="tut-anim-nodepop1"/>
+            <circle cx="160" cy="55" r="3.5" fill="#274166" stroke="#5588cc" stroke-width="1.2" class="tut-anim-nodepop2"/>
+            <circle cx="220" cy="70" r="3.5" fill="#274166" stroke="#5588cc" stroke-width="1.2" class="tut-anim-nodepop3"/>
+            <!-- Click indicators -->
+            <g class="tut-anim-clicks">
+              <circle cx="130" cy="68" r="7" fill="none" stroke="#e8dfc6" stroke-width="0.6" opacity=".4"/>
+              <circle cx="160" cy="55" r="7" fill="none" stroke="#e8dfc6" stroke-width="0.6" opacity=".4"/>
+              <circle cx="220" cy="70" r="7" fill="none" stroke="#e8dfc6" stroke-width="0.6" opacity=".4"/>
+            </g>
+          </svg>
+        </div>
+        <div class="tut-text">
+          <h3 class="tut-slide-title">Plan the Route</h3>
+          <p>Click a deployed operator to open the <b>radial menu</b>, then select <b>Route</b>. Click on the map to place waypoints. The operator will follow this path when you execute.</p>
+        </div>
+      </div>
+
+      <!-- Slide 3: Facing & Look-At -->
+      <div class="tut-slide">
+        <div class="tut-visual">
+          <svg viewBox="0 0 280 160" class="tut-svg">
+            <rect x="0" y="0" width="280" height="160" rx="6" fill="#111d33"/>
+            <rect x="50" y="20" width="190" height="120" rx="2" fill="#1e3352" stroke="#274166" stroke-width="1.5"/>
+            <!-- Operator with FOV cone -->
+            <path d="M110,90 L155,60 L155,120 Z" fill="#5588cc" opacity=".1" class="tut-anim-fovsweep"/>
+            <polygon points="115,90 107,84 111,90 107,96" fill="#c8bb96" stroke="#5588cc" stroke-width="1.5"/>
+            <!-- Facing arrow -->
+            <line x1="115" y1="90" x2="145" y2="75" stroke="#e8dfc6" stroke-width="1" stroke-dasharray="3 2" class="tut-anim-facingline"/>
+            <polygon points="145,75 140,79 141,73" fill="#e8dfc6" opacity=".7"/>
+            <!-- Right-click label -->
+            <text x="130" y="68" text-anchor="middle" fill="#e8dfc6" font-size="5.5" font-family="monospace" opacity=".6">right-click drag</text>
+            <!-- Look-at target on right -->
+            <g class="tut-anim-looktarget">
+              <line x1="110" y1="90" x2="200" y2="50" stroke="#6699bb" stroke-width="1" stroke-dasharray="3 2"/>
+              <circle cx="200" cy="50" r="5" fill="none" stroke="#6699bb" stroke-width="1"/>
+              <line x1="197" y1="50" x2="203" y2="50" stroke="#6699bb" stroke-width="1"/>
+              <line x1="200" y1="47" x2="200" y2="53" stroke="#6699bb" stroke-width="1"/>
+            </g>
+            <text x="200" y="40" text-anchor="middle" fill="#6699bb" font-size="5" font-family="monospace" opacity=".6">look target</text>
+          </svg>
+        </div>
+        <div class="tut-text">
+          <h3 class="tut-slide-title">Facing & Look-At</h3>
+          <p><b>Right-click + drag</b> from an operator or waypoint to set which direction they face. Use the <b>Look-At</b> option from the node menu to lock their gaze on a specific point as they move.</p>
+        </div>
+      </div>
+
+      <!-- Slide 4: Waypoint Options -->
+      <div class="tut-slide">
+        <div class="tut-visual">
+          <svg viewBox="0 0 280 160" class="tut-svg">
+            <rect x="0" y="0" width="280" height="160" rx="6" fill="#111d33"/>
+            <rect x="50" y="20" width="190" height="120" rx="2" fill="#1e3352" stroke="#274166" stroke-width="1.5"/>
+            <!-- Path -->
+            <path d="M90,110 C110,80 130,60 160,60 S200,70 210,50" fill="none" stroke="#cc7744" stroke-width="1.5" stroke-dasharray="4 3"/>
+            <!-- Node with radial menu -->
+            <circle cx="160" cy="60" r="4" fill="#274166" stroke="#cc7744" stroke-width="1.5"/>
+            <!-- Radial menu items -->
+            <g class="tut-anim-radial">
+              <circle cx="160" cy="60" r="24" fill="none" stroke="#274166" stroke-width="0.8" opacity=".4"/>
+              <!-- Hold -->
+              <g transform="translate(160,38)"><circle r="9" fill="#1e3352" stroke="#274166" stroke-width="1"/><rect x="-3" y="-4" width="2.5" height="8" rx="0.5" fill="#cc7744"/><rect x="1" y="-4" width="2.5" height="8" rx="0.5" fill="#cc7744"/></g>
+              <text x="160" y="26" text-anchor="middle" fill="#8a836e" font-size="4.5" font-family="monospace">HOLD</text>
+              <!-- Speed -->
+              <g transform="translate(183,54)"><circle r="9" fill="#1e3352" stroke="#274166" stroke-width="1"/><text x="0" y="3" text-anchor="middle" fill="#e8dfc6" font-size="7" font-family="monospace">S</text></g>
+              <text x="183" y="42" text-anchor="middle" fill="#8a836e" font-size="4.5" font-family="monospace">SPEED</text>
+              <!-- Direction -->
+              <g transform="translate(183,72)"><circle r="9" fill="#1e3352" stroke="#274166" stroke-width="1"/><polygon points="3,0 -3,-3 -3,3" fill="#e8dfc6"/></g>
+              <!-- Delete -->
+              <g transform="translate(137,54)"><circle r="9" fill="#1e3352" stroke="#274166" stroke-width="1"/><line x1="-3" y1="-3" x2="3" y2="3" stroke="#cc6655" stroke-width="1.5"/><line x1="3" y1="-3" x2="-3" y2="3" stroke="#cc6655" stroke-width="1.5"/></g>
+            </g>
+            <!-- Hold icon indicator on waypoint -->
+            <circle cx="160" cy="60" r="8" fill="none" stroke="#cc7744" stroke-width="0.8" stroke-dasharray="2 2" opacity=".6"/>
+          </svg>
+        </div>
+        <div class="tut-text">
+          <h3 class="tut-slide-title">Waypoint Options</h3>
+          <p>Click any waypoint node to open a <b>radial menu</b> with options: <b>Hold</b> (pause until go-code), <b>Speed</b> (0.2x to 3x), <b>Direction</b>, or <b>Delete</b>. Drag nodes to reposition them.</p>
+        </div>
+      </div>
+
+      <!-- Slide 5: Execute -->
+      <div class="tut-slide">
+        <div class="tut-visual">
+          <svg viewBox="0 0 280 160" class="tut-svg">
+            <rect x="0" y="0" width="280" height="160" rx="6" fill="#111d33"/>
+            <rect x="50" y="15" width="190" height="115" rx="2" fill="#1e3352" stroke="#274166" stroke-width="1.5"/>
+            <!-- Operator moving along path -->
+            <path d="M80,105 C100,80 140,50 180,45 S220,55 230,40" fill="none" stroke="#5588cc" stroke-width="1" opacity=".3"/>
+            <!-- FOV cone sweeping -->
+            <path d="M140,65 L190,40 L185,85 Z" fill="#5588cc" opacity=".08" class="tut-anim-fovmove"/>
+            <!-- Operator mid-route -->
+            <g class="tut-anim-opmove">
+              <polygon points="145,65 137,59 141,65 137,71" fill="#c8bb96" stroke="#5588cc" stroke-width="1.5"/>
+            </g>
+            <!-- Threat neutralized -->
+            <g transform="translate(200,50)">
+              <circle r="5" fill="none" stroke="#cc4433" stroke-width="1.2" opacity=".3"/>
+              <line x1="-3" y1="-3" x2="3" y2="3" stroke="#cc4433" stroke-width="1.5" opacity=".3"/>
+              <line x1="3" y1="-3" x2="-3" y2="3" stroke="#cc4433" stroke-width="1.5" opacity=".3"/>
+            </g>
+            <!-- Threat active -->
+            <g transform="translate(170,35)" class="tut-anim-threat">
+              <circle r="5" fill="none" stroke="#cc4433" stroke-width="1.5"/>
+              <line x1="-3" y1="-3" x2="3" y2="3" stroke="#cc4433" stroke-width="1.5"/>
+              <line x1="3" y1="-3" x2="-3" y2="3" stroke="#cc4433" stroke-width="1.5"/>
+            </g>
+            <!-- HUD bar -->
+            <rect x="0" y="134" width="280" height="26" rx="0" fill="rgba(12,21,37,0.92)"/>
+            <line x1="0" y1="134" x2="280" y2="134" stroke="#1e3352" stroke-width="1"/>
+            <!-- GO button in bar -->
+            <rect x="115" y="139" width="50" height="16" rx="3" fill="#274166" stroke="#e8dfc6" stroke-width="0.8"/>
+            <text x="140" y="150" text-anchor="middle" fill="#e8dfc6" font-size="7" font-weight="bold" font-family="monospace">GO!</text>
+            <!-- Space hint -->
+            <text x="140" y="130" text-anchor="middle" fill="#8a836e" font-size="5" font-family="monospace">or press SPACE</text>
+          </svg>
+        </div>
+        <div class="tut-text">
+          <h3 class="tut-slide-title">Execute the Plan</h3>
+          <p>Press <b>Space</b> or click <b>GO</b> to watch your operators execute. They follow their paths and <b>clear threats</b> within their field of view. Pause anytime with Space.</p>
+        </div>
+      </div>
+
+      <!-- Slide 6: Stages -->
+      <div class="tut-slide">
+        <div class="tut-visual">
+          <svg viewBox="0 0 280 160" class="tut-svg">
+            <rect x="0" y="0" width="280" height="160" rx="6" fill="#111d33"/>
+            <!-- Stage 1 zone -->
+            <rect x="15" y="20" width="120" height="105" rx="4" fill="#1e3352" stroke="#274166" stroke-width="1"/>
+            <text x="75" y="14" text-anchor="middle" fill="#8a836e" font-size="6" font-family="monospace" font-weight="bold">STAGE 1</text>
+            <!-- Op in stage 1 -->
+            <polygon points="45,90 37,84 41,90 37,96" fill="#c8bb96" stroke="#5588cc" stroke-width="1.2"/>
+            <path d="M45,90 C60,70 80,55 105,50" fill="none" stroke="#5588cc" stroke-width="1" stroke-dasharray="3 2"/>
+            <circle cx="105" cy="50" r="3" fill="#274166" stroke="#5588cc" stroke-width="1"/>
+            <!-- Arrow between stages -->
+            <g class="tut-anim-stagearrow">
+              <line x1="140" y1="72" x2="152" y2="72" stroke="#e8dfc6" stroke-width="1.5"/>
+              <polygon points="155,72 150,68 150,76" fill="#e8dfc6"/>
+            </g>
+            <!-- Stage 2 zone -->
+            <rect x="160" y="20" width="105" height="105" rx="4" fill="#1e3352" stroke="#274166" stroke-width="1"/>
+            <text x="212" y="14" text-anchor="middle" fill="#8a836e" font-size="6" font-family="monospace" font-weight="bold">STAGE 2</text>
+            <!-- Op continues in stage 2 -->
+            <polygon points="185,55 177,49 181,55 177,61" fill="#c8bb96" stroke="#5588cc" stroke-width="1.2"/>
+            <path d="M185,55 C200,60 220,80 240,85" fill="none" stroke="#5588cc" stroke-width="1" stroke-dasharray="3 2"/>
+            <circle cx="240" cy="85" r="3" fill="#274166" stroke="#5588cc" stroke-width="1"/>
+            <!-- Stage dots at bottom -->
+            <g transform="translate(140,145)">
+              <circle cx="-12" cy="0" r="4" fill="#e8dfc6"/>
+              <circle cx="4" cy="0" r="4" fill="#274166" stroke="#e8dfc6" stroke-width="1"/>
+              <circle cx="20" cy="0" r="3" fill="none" stroke="#8a836e" stroke-width="0.8" stroke-dasharray="1.5 1.5"/>
+            </g>
+            <text x="140" y="155" text-anchor="middle" fill="#8a836e" font-size="4.5" font-family="monospace">SAVE STAGE to continue</text>
+          </svg>
+        </div>
+        <div class="tut-text">
+          <h3 class="tut-slide-title">Stages</h3>
+          <p>Break complex plans into <b>stages</b>. Plan and execute a stage, then click <b>Save Stage</b> to lock it in. Operators stay at their end positions, ready for the next phase. All stages replay in sequence.</p>
+        </div>
+      </div>
+
+      <!-- Slide 7: Camera & Controls -->
+      <div class="tut-slide">
+        <div class="tut-visual">
+          <svg viewBox="0 0 280 160" class="tut-svg">
+            <rect x="0" y="0" width="280" height="160" rx="6" fill="#111d33"/>
+            <rect x="40" y="20" width="200" height="120" rx="2" fill="#1e3352" stroke="#274166" stroke-width="1.5"/>
+            <!-- Zoom indicator -->
+            <g transform="translate(60,50)">
+              <circle r="18" fill="none" stroke="#274166" stroke-width="1" stroke-dasharray="2 2"/>
+              <text x="0" y="3" text-anchor="middle" fill="#e8dfc6" font-size="8" font-family="monospace" opacity=".7">+</text>
+              <text x="0" y="-22" text-anchor="middle" fill="#8a836e" font-size="5" font-family="monospace">scroll</text>
+            </g>
+            <!-- Pan indicator -->
+            <g transform="translate(140,55)">
+              <line x1="0" y1="-12" x2="0" y2="12" stroke="#e8dfc6" stroke-width="1" opacity=".4"/>
+              <line x1="-12" y1="0" x2="12" y2="0" stroke="#e8dfc6" stroke-width="1" opacity=".4"/>
+              <polygon points="0,-14 -3,-10 3,-10" fill="#e8dfc6" opacity=".4"/>
+              <polygon points="0,14 -3,10 3,10" fill="#e8dfc6" opacity=".4"/>
+              <polygon points="-14,0 -10,-3 -10,3" fill="#e8dfc6" opacity=".4"/>
+              <polygon points="14,0 10,-3 10,3" fill="#e8dfc6" opacity=".4"/>
+              <text x="0" y="-20" text-anchor="middle" fill="#8a836e" font-size="5" font-family="monospace">right-click drag</text>
+            </g>
+            <!-- Keyboard shortcuts -->
+            <g transform="translate(60,110)">
+              <rect x="-16" y="-8" width="32" height="16" rx="3" fill="#274166" stroke="#1e3352" stroke-width="0.8"/>
+              <text x="0" y="3" text-anchor="middle" fill="#e8dfc6" font-size="6" font-family="monospace">SPACE</text>
+            </g>
+            <text x="60" y="130" text-anchor="middle" fill="#8a836e" font-size="5" font-family="monospace">go / pause</text>
+            <g transform="translate(140,110)">
+              <rect x="-8" y="-8" width="16" height="16" rx="3" fill="#274166" stroke="#1e3352" stroke-width="0.8"/>
+              <text x="0" y="3" text-anchor="middle" fill="#e8dfc6" font-size="7" font-family="monospace">R</text>
+            </g>
+            <text x="140" y="130" text-anchor="middle" fill="#8a836e" font-size="5" font-family="monospace">reset</text>
+            <g transform="translate(210,110)">
+              <rect x="-12" y="-8" width="24" height="16" rx="3" fill="#274166" stroke="#1e3352" stroke-width="0.8"/>
+              <text x="0" y="3" text-anchor="middle" fill="#e8dfc6" font-size="6" font-family="monospace">ESC</text>
+            </g>
+            <text x="210" y="130" text-anchor="middle" fill="#8a836e" font-size="5" font-family="monospace">cancel</text>
+          </svg>
+        </div>
+        <div class="tut-text">
+          <h3 class="tut-slide-title">Camera & Shortcuts</h3>
+          <p><b>Scroll</b> to zoom, <b>right-click drag</b> to pan. Key shortcuts: <b>Space</b> = go/pause, <b>R</b> = reset, <b>Esc</b> = cancel/deselect. Use <b>Share</b> to export a GIF of your run.</p>
+        </div>
+      </div>
+
     </div>
-    <button id="btn-tut-back" class="menu-start-btn" style="margin-top:8px;">BACK TO MENU</button>
+
+    <!-- Navigation -->
+    <div class="tut-nav">
+      <button id="tut-prev" class="tut-nav-btn">&larr;</button>
+      <div id="tut-dots" class="tut-dots"></div>
+      <button id="tut-next" class="tut-nav-btn">&rarr;</button>
+    </div>
+    <button id="btn-tut-back" class="menu-start-btn tut-back-btn">GOT IT</button>
   </div>
 </div>
 
@@ -240,7 +498,7 @@ function undoHistory() {
 interface SavedMap {
   name: string;
   data: {
-    w: number[][];
+    w: any[][];
     t: number[][];
     e: number[][];
     f: number[][];
@@ -266,7 +524,7 @@ function saveCurrentMap(name: string) {
   const mapData: SavedMap = {
     name,
     data: {
-      w: customRoom.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.hasDoor ? (w.doorOpen ? 1 : 2) : 0, w.doorPos]),
+      w: customRoom.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.doors.map(d => [d.pos, d.open ? 1 : 0])]),
       t: customRoom.threats.map(t => [t.position.x, t.position.y]),
       e: customRoom.entryPoints.map(e => [e.x, e.y]),
       f: customRoom.floor.map(p => [p.x, p.y]),
@@ -288,9 +546,13 @@ function deleteSavedMap(index: number) {
 function roomFromSavedMap(mapData: SavedMap['data']): Room {
   return {
     name: 'Custom',
-    walls: (mapData.w || []).map((w: number[]) => {
-      const wall = makeWall(w[0], w[1], w[2], w[3], w[4] > 0, w[5] ?? 0.5);
-      if (w[4] === 1) wall.doorOpen = true;
+    walls: (mapData.w || []).map((w: any[]) => {
+      const wall = makeWall(w[0], w[1], w[2], w[3]);
+      if (Array.isArray(w[4])) {
+        wall.doors = w[4].map((d: any) => ({ pos: d[0], open: d[1] === 1 }));
+      } else if (w[4] > 0) {
+        wall.doors = [{ pos: w[5] ?? 0.5, open: w[4] === 1 }];
+      }
       return wall;
     }),
     threats: (mapData.t || []).map((t: number[]) => makeThreat(t[0], t[1])),
@@ -302,7 +564,7 @@ function roomFromSavedMap(mapData: SavedMap['data']): Room {
 function startSavedMapMission(mapData: SavedMap['data']) {
   state.room = roomFromSavedMap(mapData);
   state.room.floor = computeFloorCells(state.room.walls);
-  for (const w of state.room.walls) if (w.hasDoor) w.doorOpen = true;
+  for (const w of state.room.walls) for (const d of w.doors) d.open = true;
   state.operators = [];
   state.selectedOpId = null;
   state.mode = 'planning';
@@ -430,7 +692,7 @@ function updateFloor() {
 /** Compute enclosed floor cells using ray-casting.
  *  For each grid cell, cast rays in 4 cardinal directions.
  *  A cell is "enclosed" if rays hit walls in at least 3 of 4 directions. */
-function computeFloorCells(walls: { a: Vec2; b: Vec2; hasDoor: boolean }[]): Vec2[] {
+function computeFloorCells(walls: { a: Vec2; b: Vec2; doors: { pos: number; open: boolean }[] }[]): Vec2[] {
   if (walls.length < 3) return [];
   // Find bounding box of all walls
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -483,7 +745,7 @@ function mergeWalls() {
     for (let i = 0; i < customRoom.walls.length && !merged; i++) {
       for (let j = i + 1; j < customRoom.walls.length && !merged; j++) {
         const a = customRoom.walls[i], b = customRoom.walls[j];
-        if (a.hasDoor || b.hasDoor) continue;
+        if (a.doors.length > 0 || b.doors.length > 0) continue;
         const m = tryMerge(a, b, EPS);
         if (m) {
           customRoom.walls[i] = m;
@@ -562,8 +824,54 @@ for (const name of Object.keys(ROOM_TEMPLATES)) {
 // Operator count is always 7 for build screen too - no selector needed
 
 document.getElementById('btn-start')!.onclick = startMission;
-document.getElementById('btn-tut')!.onclick = () => show('tut');
+document.getElementById('btn-tut')!.onclick = () => { tutSlideIdx = 0; updateTutSlides(); show('tut'); };
 document.getElementById('btn-tut-back')!.onclick = () => show('menu');
+
+// ---- Tutorial Slide Deck ----
+let tutSlideIdx = 0;
+const tutSlidesEl = document.getElementById('tut-slides')!;
+const tutSlides = tutSlidesEl.querySelectorAll('.tut-slide');
+const tutDotsEl = document.getElementById('tut-dots')!;
+const tutTotal = tutSlides.length;
+
+for (let i = 0; i < tutTotal; i++) {
+  const dot = document.createElement('button');
+  dot.className = 'tut-dot';
+  if (i === 0) dot.classList.add('active');
+  dot.onclick = () => { tutSlideIdx = i; updateTutSlides(); };
+  tutDotsEl.appendChild(dot);
+}
+
+function updateTutSlides() {
+  tutSlidesEl.style.transform = `translateX(-${tutSlideIdx * 100}%)`;
+  tutDotsEl.querySelectorAll('.tut-dot').forEach((d, i) => {
+    d.classList.toggle('active', i === tutSlideIdx);
+  });
+  (document.getElementById('tut-prev') as HTMLButtonElement).disabled = tutSlideIdx === 0;
+  (document.getElementById('tut-next') as HTMLButtonElement).disabled = tutSlideIdx === tutTotal - 1;
+}
+
+document.getElementById('tut-prev')!.onclick = () => { if (tutSlideIdx > 0) { tutSlideIdx--; updateTutSlides(); } };
+document.getElementById('tut-next')!.onclick = () => { if (tutSlideIdx < tutTotal - 1) { tutSlideIdx++; updateTutSlides(); } };
+
+// Swipe support
+let tutTouchX = 0;
+document.getElementById('tut-screen')!.addEventListener('touchstart', (e) => { tutTouchX = e.touches[0].clientX; }, { passive: true });
+document.getElementById('tut-screen')!.addEventListener('touchend', (e) => {
+  const dx = e.changedTouches[0].clientX - tutTouchX;
+  if (dx > 50 && tutSlideIdx > 0) { tutSlideIdx--; updateTutSlides(); }
+  else if (dx < -50 && tutSlideIdx < tutTotal - 1) { tutSlideIdx++; updateTutSlides(); }
+}, { passive: true });
+
+// Arrow keys on tutorial screen
+window.addEventListener('keydown', (e) => {
+  if (document.getElementById('tut-screen')!.style.display === 'none') return;
+  if (e.key === 'ArrowLeft' && tutSlideIdx > 0) { tutSlideIdx--; updateTutSlides(); }
+  if (e.key === 'ArrowRight' && tutSlideIdx < tutTotal - 1) { tutSlideIdx++; updateTutSlides(); }
+  if (e.key === 'Escape') show('menu');
+});
+
+updateTutSlides();
 
 // Load room from code input on menu
 document.getElementById('btn-load-code')!.onclick = () => {
@@ -631,7 +939,7 @@ for (const name of STAMP_NAMES) {
 // Share codes
 document.getElementById('build-export')!.onclick = () => {
   const code = JSON.stringify({
-    w: customRoom.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.hasDoor ? (w.doorOpen ? 1 : 2) : 0, w.doorPos]),
+    w: customRoom.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.doors.map(d => [d.pos, d.open ? 1 : 0])]),
     t: customRoom.threats.map(t => [t.position.x, t.position.y]),
     e: customRoom.entryPoints.map(e => [e.x, e.y]),
     f: customRoom.floor.map(p => [p.x, p.y]),
@@ -643,9 +951,13 @@ document.getElementById('build-import')!.onclick = () => {
   try {
     const d = JSON.parse((document.getElementById('build-code') as HTMLTextAreaElement).value);
     pushHistory();
-    customRoom.walls = (d.w || []).map((w: number[]) => {
-      const wall = makeWall(w[0], w[1], w[2], w[3], w[4] > 0, w[5] ?? 0.5);
-      if (w[4] === 1) wall.doorOpen = true;
+    customRoom.walls = (d.w || []).map((w: any[]) => {
+      const wall = makeWall(w[0], w[1], w[2], w[3]);
+      if (Array.isArray(w[4])) {
+        wall.doors = w[4].map((dd: any) => ({ pos: dd[0], open: dd[1] === 1 }));
+      } else if (w[4] > 0) {
+        wall.doors = [{ pos: w[5] ?? 0.5, open: w[4] === 1 }];
+      }
       return wall;
     });
     customRoom.threats = (d.t || []).map((t: number[]) => makeThreat(t[0], t[1]));
@@ -701,7 +1013,7 @@ function show(s: 'menu' | 'tut' | 'build' | 'game') {
 function startMission() {
   state.room = (ROOM_TEMPLATES as Record<string, () => Room>)[selRoom]();
   state.room.floor = computeFloorCells(state.room.walls);
-  for (const w of state.room.walls) if (w.hasDoor) w.doorOpen = true;
+  for (const w of state.room.walls) for (const d of w.doors) d.open = true;
   state.operators = [];
   state.selectedOpId = null;
   state.mode = 'planning';
@@ -1106,7 +1418,7 @@ function downloadShareGif() {
 
 function getRoomShareCode(): string {
   return JSON.stringify({
-    w: state.room.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.hasDoor ? (w.doorOpen ? 1 : 2) : 0, w.doorPos]),
+    w: state.room.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.doors.map(d => [d.pos, d.open ? 1 : 0])]),
     t: state.room.threats.map(t => [t.position.x, t.position.y]),
     e: state.room.entryPoints.map(e => [e.x, e.y]),
     f: state.room.floor.map(p => [p.x, p.y]),
@@ -1824,16 +2136,15 @@ buildCv.addEventListener('mousedown', (e) => {
       const w = customRoom.walls[buildHoveredDoorSlot.wallIdx];
       const clickedFrac = buildHoveredDoorSlot.slotFrac;
       pushHistory();
-      if (!w.hasDoor) {
-        // Place door at this slot
-        w.hasDoor = true; w.doorOpen = true; w.doorPos = clickedFrac;
-      } else if (Math.abs(w.doorPos - clickedFrac) < 0.05) {
-        // Clicking on existing door position: cycle open -> closed -> remove
-        if (w.doorOpen) { w.doorOpen = false; }
-        else { w.hasDoor = false; w.doorOpen = false; }
+      // Check if there's already a door at this slot
+      const existIdx = w.doors.findIndex(d => Math.abs(d.pos - clickedFrac) < 0.05);
+      if (existIdx >= 0) {
+        // Toggle: open -> closed -> remove
+        if (w.doors[existIdx].open) { w.doors[existIdx].open = false; }
+        else { w.doors.splice(existIdx, 1); }
       } else {
-        // Clicking a different slot: move door there
-        w.doorPos = clickedFrac; w.doorOpen = true;
+        // Add a new door at this slot
+        w.doors.push({ pos: clickedFrac, open: true });
       }
     }
   } else if (buildTool === 'threat') {
@@ -2025,7 +2336,7 @@ function renderBuild() {
       ctx.globalAlpha = 0.45;
       for (const pw of previewWalls) {
         ctx.lineCap = 'round'; ctx.lineWidth = 8;
-        ctx.strokeStyle = pw.hasDoor ? 'rgba(192,160,96,0.5)' : 'rgba(68,187,170,0.5)';
+        ctx.strokeStyle = pw.doors.length > 0 ? 'rgba(192,160,96,0.5)' : 'rgba(68,187,170,0.5)';
         ctx.setLineDash([10, 6]);
         ctx.beginPath(); ctx.moveTo(pw.a.x, pw.a.y); ctx.lineTo(pw.b.x, pw.b.y); ctx.stroke();
         ctx.setLineDash([]);
@@ -2092,7 +2403,7 @@ function renderBuild() {
       for (const frac of slots) {
         const sx = w.a.x + dx * frac, sy = w.a.y + dy * frac;
         const isHovered = buildHoveredDoorSlot?.wallIdx === i && Math.abs(buildHoveredDoorSlot.slotFrac - frac) < 0.01;
-        const isExisting = w.hasDoor && Math.abs(w.doorPos - frac) < 0.05;
+        const isExisting = w.doors.some(d => Math.abs(d.pos - frac) < 0.05);
         if (isExisting) continue; // don't draw slot dot over existing door
         const pulse = isHovered ? 0.5 + 0.5 * Math.sin(buildAnimT * 5) : 0;
         const alpha = isHovered ? 0.6 + pulse * 0.4 : 0.2;
@@ -2136,45 +2447,55 @@ function renderBuild() {
   ctx.fillStyle = 'rgba(8,14,18,0.75)'; ctx.fillRect(0, H - 22, W, 22);
   ctx.strokeStyle = 'rgba(68,187,170,0.1)'; ctx.beginPath(); ctx.moveTo(0, H - 22); ctx.lineTo(W, H - 22); ctx.stroke();
   ctx.fillStyle = 'rgba(138,170,153,0.45)'; ctx.font = '9px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  const doors = customRoom.walls.filter(w => w.hasDoor).length;
+  const doors = customRoom.walls.reduce((s, w) => s + w.doors.length, 0);
   ctx.fillText(`Walls: ${customRoom.walls.length}  Doors: ${doors}  Threats: ${customRoom.threats.length}  Entries: ${customRoom.entryPoints.length}`, 10, H - 11);
   ctx.textAlign = 'right';
   ctx.fillText('[1-6] Tools  [Ctrl+Z] Undo', W - 10, H - 11);
 }
 
-function drawBuildWall(ctx: CanvasRenderingContext2D, w: { a: Vec2; b: Vec2; hasDoor: boolean; doorOpen: boolean; doorPos: number }, hover: boolean) {
+function drawBuildWall(ctx: CanvasRenderingContext2D, w: { a: Vec2; b: Vec2; doors: { pos: number; open: boolean }[] }, hover: boolean) {
   const { a, b } = w;
   const dx = b.x - a.x, dy = b.y - a.y, len = Math.sqrt(dx * dx + dy * dy);
   if (len < 1) return;
 
-  if (w.hasDoor) {
-    const dp = w.doorPos;
-    const f = Math.min(DOOR_W / len, 0.9), gs = dp - f / 2, ge = dp + f / 2;
-    // Wall segments
+  if (w.doors.length > 0) {
+    const sorted = [...w.doors].sort((a2, b2) => a2.pos - b2.pos);
+    const gaps = sorted.map(d => {
+      const f = Math.min(DOOR_W / len, 0.9);
+      return { gs: d.pos - f / 2, ge: d.pos + f / 2, open: d.open };
+    });
+    // Draw solid wall segments between door gaps
     ctx.lineCap = 'round';
     ctx.strokeStyle = hover ? '#ff6655' : '#d8cbb0';
     ctx.lineWidth = hover ? 10 : WALL_W;
-    if (gs > 0.02) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x + dx * gs, a.y + dy * gs); ctx.stroke(); }
-    if (ge < 0.98) { ctx.beginPath(); ctx.moveTo(a.x + dx * ge, a.y + dy * ge); ctx.lineTo(b.x, b.y); ctx.stroke(); }
-    // Door frame
+    let cursor = 0;
+    for (const g of gaps) {
+      if (g.gs > cursor + 0.02) {
+        ctx.beginPath(); ctx.moveTo(a.x + dx * cursor, a.y + dy * cursor); ctx.lineTo(a.x + dx * g.gs, a.y + dy * g.gs); ctx.stroke();
+      }
+      cursor = g.ge;
+    }
+    if (cursor < 0.98) {
+      ctx.beginPath(); ctx.moveTo(a.x + dx * cursor, a.y + dy * cursor); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    // Door frames
     const nx = -dy / len, ny = dx / len;
-    const dsx = a.x + dx * gs, dsy = a.y + dy * gs, dex = a.x + dx * ge, dey = a.y + dy * ge;
-    if (w.doorOpen) {
-      // Open: just frame marks, no door panel
-      ctx.strokeStyle = '#5a8a5a'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(dsx + nx * 6, dsy + ny * 6); ctx.lineTo(dsx - nx * 6, dsy - ny * 6); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(dex + nx * 6, dey + ny * 6); ctx.lineTo(dex - nx * 6, dey - ny * 6); ctx.stroke();
-      // no label text for open doors
-    } else {
-      // Closed: door panel across gap
-      ctx.strokeStyle = '#8a6a3a'; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.moveTo(dsx, dsy); ctx.lineTo(dex, dey); ctx.stroke();
-      ctx.strokeStyle = '#8a6a3a'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(dsx + nx * 6, dsy + ny * 6); ctx.lineTo(dsx - nx * 6, dsy - ny * 6); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(dex + nx * 6, dey + ny * 6); ctx.lineTo(dex - nx * 6, dey - ny * 6); ctx.stroke();
-      ctx.fillStyle = '#c0a060'; ctx.beginPath();
-      ctx.arc((dsx + dex) / 2 + nx * 3, (dsy + dey) / 2 + ny * 3, 2.5, 0, Math.PI * 2); ctx.fill();
-      // no label text for closed doors
+    for (const g of gaps) {
+      const dsx = a.x + dx * g.gs, dsy = a.y + dy * g.gs;
+      const dex = a.x + dx * g.ge, dey = a.y + dy * g.ge;
+      if (g.open) {
+        ctx.strokeStyle = '#5a8a5a'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(dsx + nx * 6, dsy + ny * 6); ctx.lineTo(dsx - nx * 6, dsy - ny * 6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(dex + nx * 6, dey + ny * 6); ctx.lineTo(dex - nx * 6, dey - ny * 6); ctx.stroke();
+      } else {
+        ctx.strokeStyle = '#8a6a3a'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(dsx, dsy); ctx.lineTo(dex, dey); ctx.stroke();
+        ctx.strokeStyle = '#8a6a3a'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(dsx + nx * 6, dsy + ny * 6); ctx.lineTo(dsx - nx * 6, dsy - ny * 6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(dex + nx * 6, dey + ny * 6); ctx.lineTo(dex - nx * 6, dey - ny * 6); ctx.stroke();
+        ctx.fillStyle = '#c0a060'; ctx.beginPath();
+        ctx.arc((dsx + dex) / 2 + nx * 3, (dsy + dey) / 2 + ny * 3, 2.5, 0, Math.PI * 2); ctx.fill();
+      }
     }
   } else {
     // Regular wall: outline + fill

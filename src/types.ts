@@ -1,7 +1,8 @@
 import type { Vec2 } from './math/vec2';
 import type { SplineLUT } from './math/spline';
 
-export interface WallSegment { a: Vec2; b: Vec2; hasDoor: boolean; doorOpen: boolean; doorPos: number; }
+export interface DoorEntry { pos: number; open: boolean; }
+export interface WallSegment { a: Vec2; b: Vec2; doors: DoorEntry[]; }
 export interface ThreatMarker { position: Vec2; neutralized: boolean; neutralizeTimer: number; }
 export interface Room { walls: WallSegment[]; threats: ThreatMarker[]; floor: Vec2[]; name: string; entryPoints: Vec2[]; }
 

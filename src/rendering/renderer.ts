@@ -250,25 +250,48 @@ function drawThreat(ctx: CanvasRenderingContext2D, t: ThreatMarker) {
 }
 
 function drawWall(ctx: CanvasRenderingContext2D, w: WallSegment) {
-  const { a, b, hasDoor, doorOpen } = w;
-  if (hasDoor) {
-    const dx = b.x - a.x, dy = b.y - a.y, len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 1) return;
-    const dp = w.doorPos;
-    const f = Math.min(DOOR_W / len, 0.9), gs = dp - f / 2, ge = dp + f / 2;
-    ctx.lineCap = 'round'; ctx.strokeStyle = C.wall; ctx.lineWidth = WALL_W;
-    if (gs > 0.02) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x + dx * gs, a.y + dy * gs); ctx.stroke(); }
-    if (ge < 0.98) { ctx.beginPath(); ctx.moveTo(a.x + dx * ge, a.y + dy * ge); ctx.lineTo(b.x, b.y); ctx.stroke(); }
-    const px = -dy / len * 5, py = dx / len * 5;
-    ctx.strokeStyle = doorOpen ? C.doorOpen : C.doorClosed; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(a.x + dx * gs + px, a.y + dy * gs + py); ctx.lineTo(a.x + dx * gs - px, a.y + dy * gs - py); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(a.x + dx * ge + px, a.y + dy * ge + py); ctx.lineTo(a.x + dx * ge - px, a.y + dy * ge - py); ctx.stroke();
-  } else {
+  const { a, b } = w;
+  if (w.doors.length === 0) {
+    // Solid wall
     ctx.lineCap = 'round';
     ctx.strokeStyle = C.wallEdge; ctx.lineWidth = WALL_W + 2;
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     ctx.strokeStyle = C.wall; ctx.lineWidth = WALL_W;
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  } else {
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) return;
+    // Collect door gaps sorted by position
+    const sorted = [...w.doors].sort((a2, b2) => a2.pos - b2.pos);
+    const gaps: { gs: number; ge: number; open: boolean }[] = sorted.map(d => {
+      const f = Math.min(DOOR_W / len, 0.9);
+      return { gs: d.pos - f / 2, ge: d.pos + f / 2, open: d.open };
+    });
+    // Draw solid wall segments between gaps
+    ctx.lineCap = 'round'; ctx.strokeStyle = C.wall; ctx.lineWidth = WALL_W;
+    let cursor = 0;
+    for (const g of gaps) {
+      if (g.gs > cursor + 0.02) {
+        ctx.beginPath();
+        ctx.moveTo(a.x + dx * cursor, a.y + dy * cursor);
+        ctx.lineTo(a.x + dx * g.gs, a.y + dy * g.gs);
+        ctx.stroke();
+      }
+      cursor = g.ge;
+    }
+    if (cursor < 0.98) {
+      ctx.beginPath();
+      ctx.moveTo(a.x + dx * cursor, a.y + dy * cursor);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    // Draw door frames
+    const px = -dy / len * 5, py = dx / len * 5;
+    for (const g of gaps) {
+      ctx.strokeStyle = g.open ? C.doorOpen : C.doorClosed; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(a.x + dx * g.gs + px, a.y + dy * g.gs + py); ctx.lineTo(a.x + dx * g.gs - px, a.y + dy * g.gs - py); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(a.x + dx * g.ge + px, a.y + dy * g.ge + py); ctx.lineTo(a.x + dx * g.ge - px, a.y + dy * g.ge - py); ctx.stroke();
+    }
   }
 }
 
