@@ -92,6 +92,8 @@ export interface GameState {
   pendingNode: PendingNode | null;
   /** Speed slider state when open */
   speedSlider: SpeedSliderState | null;
+  /** True during GIF export rendering - hides HUD, shows prominent watermark */
+  exportingGif: boolean;
 }
 
 export function makeWaypoint(pos: Vec2): Waypoint {
@@ -118,7 +120,7 @@ export const GRID = 20;
 export const WALL_W = 8;
 export const DOOR_W = 40;
 export const OP_R = 9;
-export const OP_SPEED = 100;
+export const OP_SPEED = 55;
 export const FOV_ANG = Math.PI * 0.5;
 export const FOV_DIST = 260;
 export const THREAT_R = 7;

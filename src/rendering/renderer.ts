@@ -104,6 +104,19 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
   // ---- Restore from camera transform (back to screen space) ----
   ctx.restore();
 
+  if (state.exportingGif) {
+    // GIF export mode: only draw a prominent watermark logo, no HUD/popups/overlays
+    drawExportWatermark(ctx, W, H);
+
+    // Room cleared overlay (simpler for GIF)
+    if (state.roomCleared) {
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = C.cleared; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('ROOM CLEARED', W / 2, H / 2); ctx.textBaseline = 'alphabetic';
+    }
+    return;
+  }
+
   // Deploy panel (screen space)
   drawDeployPanel(ctx, state, H);
 
@@ -140,6 +153,29 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
   if (state.sharePanel.open) {
     drawSharePanel(ctx, state, W, H);
   }
+}
+
+function drawExportWatermark(ctx: CanvasRenderingContext2D, W: number, H: number) {
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  // "Flow" - big italic serif
+  ctx.font = 'italic 700 42px Georgia, "Times New Roman", serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#f2ecda';
+  ctx.fillText('Flow', 14, 44);
+  const flowW = ctx.measureText('Flow').width;
+  // "Kickers" - smaller uppercase monospace with letter-spacing
+  ctx.font = 'bold 15px monospace';
+  ctx.fillStyle = '#b0a88e';
+  const kickers = 'KICKERS';
+  let kx = 14 + flowW + 8;
+  const ky = 44;
+  for (const ch of kickers) {
+    ctx.fillText(ch, kx, ky);
+    kx += ctx.measureText(ch).width + 4;
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 // ---- Exports for GIF ----
@@ -495,7 +531,7 @@ function drawPopup(ctx: CanvasRenderingContext2D, popup: NodePopup, state: GameS
   const p = popup.position;
 
   const items = isOp
-    ? ['Draw Path', 'Direction', 'Speed', 'Clear Path']
+    ? ['Draw Path', 'Direction', 'Pie', 'Speed', 'Clear Path']
     : ['Set Direction', 'Delete Node', 'Add Route', 'Speed'];
   const iw = 80, ih = 24, gap = 4;
   const totalH = items.length * (ih + gap) - gap;
@@ -681,33 +717,45 @@ function drawSharePanel(ctx: CanvasRenderingContext2D, state: GameState, W: numb
   const sp = state.sharePanel;
 
   // Dimmed backdrop
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(0, 0, W, H);
 
-  // Panel dimensions
-  const panelW = 320, panelH = 300;
+  // Panel dimensions - taller to fit re-export
+  const panelW = 340, panelH = sp.gifBlob ? 330 : 300;
   const px = W / 2 - panelW / 2, py = H / 2 - panelH / 2;
   const r = 8;
+
+  // Panel shadow
+  ctx.shadowColor = 'rgba(0,0,0,0.4)';
+  ctx.shadowBlur = 24;
+  ctx.shadowOffsetY = 4;
 
   // Panel background
   ctx.beginPath();
   ctx.roundRect(px, py, panelW, panelH, r);
   ctx.fillStyle = C.panelBg;
   ctx.fill();
+
+  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0;
+
   ctx.strokeStyle = C.popupBorder;
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Title
+  // Title bar with subtle line
   ctx.fillStyle = C.accent;
-  ctx.font = 'bold 16px monospace';
+  ctx.font = 'bold 14px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('SHARE', W / 2, py + 28);
+  ctx.fillText('SHARE', W / 2, py + 26);
+
+  // Subtle separator under title
+  ctx.strokeStyle = C.hudBorder; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(px + 16, py + 44); ctx.lineTo(px + panelW - 16, py + 44); ctx.stroke();
 
   // Close button (X) top-right
   const closeX = px + panelW - 32, closeY = py + 8, closeS = 24;
-  ctx.fillStyle = hov === 'close' ? 'rgba(200,60,50,0.3)' : 'transparent';
+  ctx.fillStyle = hov === 'close' ? 'rgba(200,60,50,0.25)' : 'transparent';
   ctx.beginPath();
   ctx.roundRect(closeX, closeY, closeS, closeS, 4);
   ctx.fill();
@@ -720,29 +768,35 @@ function drawSharePanel(ctx: CanvasRenderingContext2D, state: GameState, W: numb
   ctx.stroke();
 
   // Button layout
-  const btnW = panelW - 40, btnH = 34, btnX = px + 20;
-  const startY = py + 50;
+  const btnW = panelW - 40, btnH = 36, btnX = px + 20;
+  const startY = py + 58;
   const gap = 10;
 
-  // Divider label - ROOM CODE
+  // ---- ROOM CODE SECTION ----
   ctx.fillStyle = C.hudText;
-  ctx.font = '9px monospace';
+  ctx.font = 'bold 9px monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText('ROOM CODE', btnX, startY - 6);
+  ctx.fillText('ROOM CODE', btnX, startY - 8);
 
-  // Copy Room Code button
-  const copyLabel = sp.copiedRoomCode ? 'COPIED!' : 'COPY ROOM CODE';
+  const copyLabel = sp.copiedRoomCode ? 'COPIED TO CLIPBOARD' : 'COPY ROOM CODE';
   const copyColor = sp.copiedRoomCode ? C.cleared : C.hudBright;
   drawSharePanelBtn(ctx, btnX, startY, btnW, btnH, copyLabel, copyColor, hov === 'copy_code');
 
-  // Divider label - GIF EXPORT
-  const gifSectionY = startY + btnH + gap + 20;
-  ctx.fillStyle = C.hudText;
-  ctx.font = '9px monospace';
+  // Small description under
+  ctx.fillStyle = 'rgba(138,131,110,0.6)';
+  ctx.font = '8px monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText('GIF EXPORT', btnX, gifSectionY - 6);
+  ctx.fillText('Share with others to load this room layout', btnX + 2, startY + btnH + 10);
+
+  // ---- GIF EXPORT SECTION ----
+  const gifSectionY = startY + btnH + gap + 26;
+  ctx.fillStyle = C.hudText;
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('GIF EXPORT', btnX, gifSectionY - 8);
 
   if (sp.exporting) {
     // Progress bar during export
@@ -761,7 +815,7 @@ function drawSharePanel(ctx: CanvasRenderingContext2D, state: GameState, W: numb
     if (fillW > 0) {
       ctx.beginPath();
       ctx.roundRect(barX + 2, barY + 2, fillW, barH - 4, 3);
-      ctx.fillStyle = 'rgba(85,170,102,0.6)';
+      ctx.fillStyle = 'rgba(85,170,102,0.5)';
       ctx.fill();
     }
 
@@ -772,36 +826,48 @@ function drawSharePanel(ctx: CanvasRenderingContext2D, state: GameState, W: numb
     ctx.textBaseline = 'middle';
     ctx.fillText(`EXPORTING... ${Math.round(progress * 100)}%`, barX + barW / 2, barY + barH / 2);
     ctx.textBaseline = 'alphabetic';
+
+    // Hint below progress
+    ctx.fillStyle = 'rgba(138,131,110,0.5)';
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Recording simulation frames', barX + barW / 2, barY + barH + 12);
+
   } else if (sp.gifBlob) {
-    // Download GIF button (gif ready)
+    // Download GIF button (gif ready - prominent green styling)
     drawSharePanelBtn(ctx, btnX, gifSectionY, btnW, btnH, 'DOWNLOAD GIF', C.cleared, hov === 'download_gif');
 
-    // File size info
-    const sizeMB = (sp.gifBlob.size / (1024 * 1024)).toFixed(1);
+    // File size to the right of the button
+    const sizeMB = sp.gifBlob.size > 1024 * 1024
+      ? `${(sp.gifBlob.size / (1024 * 1024)).toFixed(1)} MB`
+      : `${Math.round(sp.gifBlob.size / 1024)} KB`;
     ctx.fillStyle = C.hudText;
     ctx.font = '9px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`${sizeMB} MB`, btnX + btnW / 2, gifSectionY + btnH + 12);
-    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(`Ready - ${sizeMB}`, btnX + btnW / 2, gifSectionY + btnH + 12);
+
+    // Re-export button (smaller, below)
+    const reExportY = gifSectionY + btnH + gap + 18;
+    drawSharePanelBtn(ctx, btnX, reExportY, btnW, 30, 'RE-EXPORT GIF', C.hudText, hov === 'export_gif');
+
   } else {
     // Export GIF button (not yet exported)
     drawSharePanelBtn(ctx, btnX, gifSectionY, btnW, btnH, 'EXPORT GIF', C.hudBright, hov === 'export_gif');
 
     // Subtitle
-    ctx.fillStyle = C.hudText;
-    ctx.font = '9px monospace';
-    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(138,131,110,0.6)';
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText('Records simulation as animated GIF', btnX + btnW / 2, gifSectionY + btnH + 12);
-    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('Record and save your simulation as animated GIF', btnX + 2, gifSectionY + btnH + 10);
   }
 
-  // Bottom hint
-  ctx.fillStyle = C.hudText;
-  ctx.font = '9px monospace';
+  // Bottom hint (ESC or click outside)
+  ctx.fillStyle = 'rgba(138,131,110,0.4)';
+  ctx.font = '8px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Click outside to close', W / 2, py + panelH - 16);
+  ctx.fillText('Click outside or press ESC to close', W / 2, py + panelH - 14);
   ctx.textBaseline = 'alphabetic';
 }

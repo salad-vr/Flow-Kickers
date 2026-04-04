@@ -164,6 +164,7 @@ const state: GameState = {
   hoveredShareBtn: null,
   pendingNode: null,
   speedSlider: null,
+  exportingGif: false,
 };
 
 // ---- Build state ----
@@ -545,6 +546,14 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (state.screen !== 'game') return;
+
+  // Share panel ESC handling (takes priority)
+  if (e.key === 'Escape' && state.sharePanel.open && !state.sharePanel.exporting) {
+    closeSharePanel();
+    e.preventDefault();
+    return;
+  }
+
   switch (e.key) {
     case ' ':
       e.preventDefault();
@@ -674,7 +683,17 @@ function handleCamera() {
     state.camera.y += (mouseWorld.y - state.camera.y) * (1 - oldZoom / state.camera.zoom) * 0.3;
   }
 
-  // Middle-click pan
+  // Right-click pan (when not doing anything else)
+  if (state.isPanning && input.rightMouseDown) {
+    const dx = (input.mousePos.x - state.panStart.x) / state.camera.zoom;
+    const dy = (input.mousePos.y - state.panStart.y) / state.camera.zoom;
+    state.camera.x = state.panCamStart.x - dx;
+    state.camera.y = state.panCamStart.y - dy;
+  }
+  if (state.isPanning && input.rightJustReleased) {
+    state.isPanning = false;
+  }
+  // Also support middle-click pan as fallback
   if (input.middleJustPressed) {
     state.isPanning = true;
     state.panStart = { x: input.mousePos.x, y: input.mousePos.y };
@@ -709,14 +728,16 @@ function handleInput() {
   // Share panel interaction (blocks all other input when open)
   if (state.sharePanel.open) {
     const W = canvas.width, H = canvas.height;
-    const panelW = 320, panelH = 300;
+    const sp = state.sharePanel;
+    const panelW = 340, panelH = sp.gifBlob ? 330 : 300;
     const px = W / 2 - panelW / 2, py = H / 2 - panelH / 2;
     const mx = input.mousePos.x, my = input.mousePos.y;
 
-    // Button layout constants
-    const btnW = panelW - 40, btnH = 34, btnX = px + 20;
-    const startY = py + 50;
+    // Button layout constants (must match renderer exactly)
+    const btnW = panelW - 40, btnH = 36, btnX = px + 20;
+    const startY = py + 58;
     const gap = 10;
+    const gifSectionY = startY + btnH + gap + 26;
 
     state.hoveredShareBtn = null;
     canvas.style.cursor = 'default';
@@ -732,10 +753,26 @@ function handleInput() {
         state.hoveredShareBtn = 'copy_code';
         canvas.style.cursor = 'pointer';
       }
-      // Export GIF / Download GIF button
-      else if (!state.sharePanel.exporting && hitBtn(input.mousePos, btnX, startY + btnH + gap + 20, btnW, btnH)) {
-        state.hoveredShareBtn = state.sharePanel.gifBlob ? 'download_gif' : 'export_gif';
-        canvas.style.cursor = 'pointer';
+      // GIF section buttons
+      else if (!sp.exporting) {
+        if (sp.gifBlob) {
+          // Download GIF button
+          if (hitBtn(input.mousePos, btnX, gifSectionY, btnW, btnH)) {
+            state.hoveredShareBtn = 'download_gif';
+            canvas.style.cursor = 'pointer';
+          }
+          // Re-export button (below download)
+          else if (hitBtn(input.mousePos, btnX, gifSectionY + btnH + gap + 18, btnW, 30)) {
+            state.hoveredShareBtn = 'export_gif';
+            canvas.style.cursor = 'pointer';
+          }
+        } else {
+          // Export GIF button
+          if (hitBtn(input.mousePos, btnX, gifSectionY, btnW, btnH)) {
+            state.hoveredShareBtn = 'export_gif';
+            canvas.style.cursor = 'pointer';
+          }
+        }
       }
     }
 
@@ -745,7 +782,7 @@ function handleInput() {
       else if (state.hoveredShareBtn === 'export_gif') { doExportGif(); }
       else if (state.hoveredShareBtn === 'download_gif') { downloadShareGif(); }
       // Click outside panel closes it (but not during export)
-      else if (!state.sharePanel.exporting && !(mx >= px && mx <= px + panelW && my >= py && my <= py + panelH)) {
+      else if (!sp.exporting && !(mx >= px && mx <= px + panelW && my >= py && my <= py + panelH)) {
         closeSharePanel();
       }
     }
@@ -836,7 +873,7 @@ function handleInput() {
     const sp = { x: (pop.position.x - cam.x) * cam.zoom + W / 2, y: (pop.position.y - cam.y) * cam.zoom + H / 2 };
     const isOp = pop.wpIdx < 0;
     const items = isOp
-      ? ['Draw Path', 'Direction', 'Speed', 'Clear Path']
+      ? ['Draw Path', 'Direction', 'Pie', 'Speed', 'Clear Path']
       : ['Set Direction', 'Delete Node', 'Add Route', 'Speed'];
     const iw = 80, ih = 24, gap = 4;
     const totalH = items.length * (ih + gap) - gap;
@@ -857,6 +894,8 @@ function handleInput() {
           state.interaction = { type: 'placing_waypoints', opId: op.id };
         } else if (items[clicked] === 'Direction') {
           state.interaction = { type: 'spinning_direction', opId: op.id };
+        } else if (items[clicked] === 'Pie') {
+          state.interaction = { type: 'placing_pie', opId: op.id };
         } else if (items[clicked] === 'Speed') {
           // Open speed slider for operator
           const sliderPos = { x: sp.x + 20, y: sp.y + 20 };
@@ -1078,18 +1117,23 @@ function handleInput() {
 
   // IDLE: new clicks
   if (input.rightJustPressed) {
+    let handled = false;
     const selOp = state.operators.find(o => o.id === state.selectedOpId && o.deployed);
     if (selOp) {
       for (let i = 0; i < selOp.path.waypoints.length; i++) {
         if (distance(worldMouse, selOp.path.waypoints[i].position) < NODE_R + 6) {
-          state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: i }; return;
+          state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: i }; handled = true; break;
         }
       }
-      if (distance(worldMouse, selOp.position) < OP_R + 8) {
-        state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: null }; return;
+      if (!handled && distance(worldMouse, selOp.position) < OP_R + 8) {
+        state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: null }; handled = true;
       }
-      const dx = worldMouse.x - selOp.position.x, dy = worldMouse.y - selOp.position.y;
-      selOp.angle = Math.atan2(dy, dx); selOp.startAngle = selOp.angle;
+    }
+    // If nothing was targeted, start panning
+    if (!handled) {
+      state.isPanning = true;
+      state.panStart = { x: input.mousePos.x, y: input.mousePos.y };
+      state.panCamStart = { x: state.camera.x, y: state.camera.y };
     }
     return;
   }
@@ -1291,7 +1335,7 @@ buildCv.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 buildCv.addEventListener('mousedown', (e2) => {
-  if (e2.button === 1) { // middle click
+  if (e2.button === 2 || e2.button === 1) { // right click or middle click = pan
     e2.preventDefault();
     buildPanning = true;
     buildPanStart = buildScreenPos(e2);
@@ -1306,7 +1350,7 @@ window.addEventListener('mousemove', (e2) => {
   }
 });
 window.addEventListener('mouseup', (e2) => {
-  if (e2.button === 1) buildPanning = false;
+  if (e2.button === 2 || e2.button === 1) buildPanning = false;
 });
 
 // ---- Game Loop ----
