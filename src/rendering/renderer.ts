@@ -706,56 +706,66 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
   const cy = barY + barH / 2;
   const by = barY + 5;
   const mode = state.mode;
+  const rightBlockX = W / 2 + 20;
+  const totalStages = state.stages.length;
 
-  // Left: MENU + SAVE STAGE
-  drawHudBtn(ctx, 8, by, 56, 26, 'MENU', C.hudText, hov === 'menu');
-  // Only show SAVE STAGE in planning mode
-  if (mode === 'planning') {
-    const stageLabel = state.stages.length === 0 ? 'SAVE STAGE' : `SAVE STAGE ${state.stages.length + 1}`;
-    drawHudBtn(ctx, 72, by, 90, 26, stageLabel, C.accent, hov === 'save_stage');
-  }
+  // ---- Left: CLEAR + MENU ----
+  drawHudBtn(ctx, 8, by, 56, 26, 'CLEAR', '#cc5544', hov === 'clear_level');
+  drawHudBtn(ctx, 72, by, 50, 26, 'MENU', C.hudText, hov === 'menu');
 
-  // Stage indicators (small dots showing saved stages)
-  if (state.stages.length > 0) {
-    const dotStartX = 170;
-    for (let i = 0; i < state.stages.length; i++) {
-      const dx = dotStartX + i * 16;
+  // ---- Center: Stage indicators (numbered, bigger) ----
+  if (totalStages > 0) {
+    const dotSpacing = 28;
+    const dotsW = (totalStages + 1) * dotSpacing;
+    const dotsStartX = W / 2 - dotsW / 2 + dotSpacing / 2;
+    for (let i = 0; i < totalStages; i++) {
+      const dx = dotsStartX + i * dotSpacing;
       const active = state.executingStageIndex === i;
       ctx.fillStyle = active ? C.accent : C.hudBorder;
-      ctx.beginPath(); ctx.arc(dx, cy, active ? 5 : 3, 0, Math.PI * 2); ctx.fill();
-      if (active) {
-        ctx.strokeStyle = C.accent; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.arc(dx, cy, 7, 0, Math.PI * 2); ctx.stroke();
-      }
+      ctx.font = active ? 'bold 12px monospace' : '11px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(i + 1), dx, cy);
+      if (active) { ctx.fillStyle = C.accent; ctx.fillRect(dx - 8, cy + 8, 16, 2); }
     }
-    // Current stage (being planned or executing)
-    const cx2 = dotStartX + state.stages.length * 16;
+    // Current planning stage (dotted)
+    const cx2 = dotsStartX + totalStages * dotSpacing;
     ctx.fillStyle = mode === 'planning' ? C.accent : C.hudBorder;
-    ctx.beginPath(); ctx.arc(cx2, cy, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = C.accent; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
-    ctx.beginPath(); ctx.arc(cx2, cy, 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.font = '11px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(String(totalStages + 1), cx2, cy);
+    ctx.strokeStyle = C.accent; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.arc(cx2, cy, 11, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
   }
 
-  // Center: GO / PAUSE / RESET
+  // ---- Right block: SAVE STAGE + GO + RESET + REPLAY + SHARE ----
+  // SAVE STAGE (glows when stage just completed as a prompt)
+  const saveLabel = totalStages === 0 ? 'SAVE STAGE' : `SAVE ${totalStages + 1}`;
+  const saveGlow = state.stageJustCompleted;
+  if (mode === 'planning' || saveGlow) {
+    if (saveGlow) {
+      const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.005);
+      ctx.shadowColor = '#f2ecda';
+      ctx.shadowBlur = 14 * pulse;
+    }
+    drawHudBtn(ctx, rightBlockX, by, 100, 26, saveLabel, saveGlow ? '#f2ecda' : C.accent, hov === 'save_stage');
+    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+  }
+
+  // GO / PAUSE / RESUME
   if (mode === 'planning') {
-    drawHudBtn(ctx, W / 2 - 40, by, 80, 26, 'GO!', C.accent, hov === 'go');
+    drawHudBtn(ctx, rightBlockX + 108, by, 70, 26, 'GO!', C.accent, hov === 'go');
   } else if (mode === 'executing') {
-    drawHudBtn(ctx, W / 2 - 40, by, 80, 26, 'PAUSE', C.hudText, hov === 'go');
+    drawHudBtn(ctx, rightBlockX + 108, by, 70, 26, 'PAUSE', C.hudText, hov === 'go');
   } else {
-    drawHudBtn(ctx, W / 2 - 40, by, 80, 26, 'RESUME', C.accent, hov === 'go');
-  }
-  drawHudBtn(ctx, W / 2 + 50, by, 60, 26, 'RESET', C.hudText, hov === 'reset');
-
-  // REPLAY (only show if there are saved stages and not currently planning first stage)
-  if (state.stages.length > 0) {
-    drawHudBtn(ctx, W / 2 + 118, by, 66, 26, 'REPLAY', C.accent, hov === 'replay');
+    drawHudBtn(ctx, rightBlockX + 108, by, 70, 26, 'RESUME', C.accent, hov === 'go');
   }
 
-  // Right: timer + SHARE
-  const m = Math.floor(state.elapsedTime / 60), s = Math.floor(state.elapsedTime % 60);
-  ctx.fillStyle = C.accent; ctx.textAlign = 'right'; ctx.font = 'bold 12px monospace';
-  ctx.fillText(`${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`, W - 78, cy);
+  drawHudBtn(ctx, rightBlockX + 186, by, 56, 26, 'RESET', C.hudText, hov === 'reset');
+
+  if (totalStages > 0) {
+    drawHudBtn(ctx, rightBlockX + 250, by, 60, 26, 'REPLAY', C.accent, hov === 'replay');
+  }
+
   drawHudBtn(ctx, W - 64, by, 56, 26, 'SHARE', C.hudText, hov === 'share');
 
   // Mode indicator top-right (rounded, polished)

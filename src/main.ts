@@ -828,11 +828,23 @@ function saveStage() {
   state.interaction = { type: 'idle' };
 }
 
-/** Execute: save current paths as final stage if any, then run all stages */
+/** Execute: save current paths as a temporary stage, snapshot pre-GO state, then run all stages */
 function doGo() {
   if (state.mode !== 'planning') return;
   const deployed = state.operators.filter(o => o.deployed);
   if (deployed.length === 0) return;
+  if (!deployed.some(o => o.path.waypoints.length >= 2) && state.stages.length === 0) return;
+
+  // Save pre-GO snapshot so RESET can return to this exact state
+  state.preGoSnapshot = {
+    operatorStates: deployed.map(op => ({
+      opId: op.id,
+      startPosition: { x: op.position.x, y: op.position.y },
+      startAngle: op.angle,
+      waypoints: JSON.parse(JSON.stringify(op.path.waypoints)),
+      tempo: op.tempo,
+    })),
+  };
 
   // Auto-save current paths as a stage if there are any
   if (deployed.some(o => o.path.waypoints.length >= 2)) {
@@ -855,6 +867,7 @@ function doGo() {
   state.pendingNode = null;
   state.speedSlider = null;
   state.interaction = { type: 'idle' };
+  state.stageJustCompleted = false;
 
   // Start executing from stage 0
   state.executingStageIndex = 0;
@@ -907,11 +920,9 @@ function checkStageCompletion() {
     // Advance to next stage
     loadAndExecuteStage(nextStage);
   } else {
-    // All stages done
-    if (state.isReplaying) {
-      state.mode = 'paused'; // pause at end of replay
-    }
-    // stay in executing/paused - user can reset or replay
+    // All stages done - pause and prompt to save stage
+    state.mode = 'paused';
+    state.stageJustCompleted = true;
   }
 }
 
@@ -924,6 +935,8 @@ function doReplay() {
   loadAndExecuteStage(0);
 }
 
+/** Reset returns to pre-GO state with routes intact (if GO was pressed),
+ *  or to initial state if no GO snapshot exists */
 function doReset() {
   state.mode = 'planning';
   state.elapsedTime = 0;
@@ -936,23 +949,76 @@ function doReset() {
   state.interaction = { type: 'idle' };
   state.executingStageIndex = -1;
   state.isReplaying = false;
+  state.stageJustCompleted = false;
 
-  // Reset operators to stage 0 start positions (or original if no stages)
-  if (state.stages.length > 0) {
-    const stage0 = state.stages[0];
-    for (const snap of stage0.operatorStates) {
+  if (state.preGoSnapshot) {
+    // Pop the auto-saved stage that doGo added
+    state.stages.pop();
+    state.currentStageIndex = state.stages.length;
+
+    // Restore operator positions and paths from pre-GO snapshot
+    for (const snap of state.preGoSnapshot.operatorStates) {
       const op = state.operators.find(o => o.id === snap.opId);
       if (!op) continue;
       op.position = { x: snap.startPosition.x, y: snap.startPosition.y };
       op.startPosition = { x: snap.startPosition.x, y: snap.startPosition.y };
       op.angle = snap.startAngle;
       op.startAngle = snap.startAngle;
+      op.path.waypoints = JSON.parse(JSON.stringify(snap.waypoints));
+      op.tempo = snap.tempo;
+      op.distanceTraveled = 0;
+      op.currentWaypointIndex = 0;
+      op.isHolding = false;
+      op.isMoving = false;
+      op.reachedEnd = false;
+      if (op.smoothPosition) op.smoothPosition = { x: op.position.x, y: op.position.y };
+      rebuildPathLUT(op);
     }
+    state.preGoSnapshot = null;
   } else {
-    for (const op of state.operators) if (op.deployed) resetOperator(op);
+    // No snapshot - full reset
+    for (const op of state.operators) {
+      if (op.deployed) resetOperator(op);
+      op.path.waypoints = [];
+      op.path.splineLUT = null;
+      op.distanceTraveled = 0;
+      op.currentWaypointIndex = 0;
+      op.isHolding = false;
+      op.isMoving = false;
+      op.reachedEnd = false;
+    }
+    state.stages = [];
+    state.currentStageIndex = 0;
   }
-  // Clear all paths and stages
+  for (const t of state.room.threats) { t.neutralized = false; t.neutralizeTimer = 0; }
+}
+
+/** Clear everything - operators, paths, stages, back to fresh deployment */
+function doClearLevel() {
+  state.mode = 'planning';
+  state.elapsedTime = 0;
+  state.roomCleared = false;
+  state.goCodesTriggered = { A: false, B: false, C: false };
+  state.popup = null;
+  state.radialMenu = null;
+  state.pendingNode = null;
+  state.speedSlider = null;
+  state.interaction = { type: 'idle' };
+  state.executingStageIndex = -1;
+  state.isReplaying = false;
+  state.stageJustCompleted = false;
+  state.preGoSnapshot = null;
+  state.viewingStageIndex = -1;
+  state.stages = [];
+  state.currentStageIndex = 0;
+  state.selectedOpId = null;
+  // Undeploy all operators
   for (const op of state.operators) {
+    op.deployed = false;
+    op.position = { x: 0, y: 0 };
+    op.startPosition = { x: 0, y: 0 };
+    op.angle = 0;
+    op.startAngle = 0;
     op.path.waypoints = [];
     op.path.splineLUT = null;
     op.distanceTraveled = 0;
@@ -961,8 +1027,6 @@ function doReset() {
     op.isMoving = false;
     op.reachedEnd = false;
   }
-  state.stages = [];
-  state.currentStageIndex = 0;
   for (const t of state.room.threats) { t.neutralized = false; t.neutralizeTimer = 0; }
 }
 
@@ -1200,12 +1264,15 @@ function handleInput() {
   const W = canvas.width;
   const btnY = hudBarY + 5;
   // HUD button positions (must match renderer drawHUD exactly)
+  // Layout: CLEAR(left) | ... [stage dots centered] ... | SAVE STAGE | GO! | RESET | REPLAY | SHARE(right)
+  const rightBlockX = W / 2 + 20; // right side starts here
   const hudBtns = {
-    menu: { x: 8, y: btnY, w: 56, h: 26 },
-    save_stage: { x: 72, y: btnY, w: 90, h: 26 },
-    go: { x: W / 2 - 40, y: btnY, w: 80, h: 26 },
-    reset: { x: W / 2 + 50, y: btnY, w: 60, h: 26 },
-    replay: { x: W / 2 + 118, y: btnY, w: 66, h: 26 },
+    clear_level: { x: 8, y: btnY, w: 56, h: 26 },
+    menu: { x: 72, y: btnY, w: 50, h: 26 },
+    save_stage: { x: rightBlockX, y: btnY, w: 100, h: 26 },
+    go: { x: rightBlockX + 108, y: btnY, w: 70, h: 26 },
+    reset: { x: rightBlockX + 186, y: btnY, w: 56, h: 26 },
+    replay: { x: rightBlockX + 250, y: btnY, w: 60, h: 26 },
     share: { x: W - 64, y: btnY, w: 56, h: 26 },
   };
   if (input.mousePos.y > hudBarY) {
@@ -1228,8 +1295,9 @@ function handleInput() {
       else if (state.mode === 'executing') { state.mode = 'paused'; }
       else if (state.mode === 'paused') { state.mode = 'executing'; }
     }
-    else if (h === 'save_stage') saveStage();
+    else if (h === 'save_stage') { saveStage(); state.stageJustCompleted = false; }
     else if (h === 'reset') doReset();
+    else if (h === 'clear_level') doClearLevel();
     else if (h === 'menu') show('menu');
     else if (h === 'replay') doReplay();
     else if (h === 'share') openSharePanel();
