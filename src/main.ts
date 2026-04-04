@@ -1441,13 +1441,14 @@ function saveStage() {
     state.currentStageIndex = state.stages.length;
     state.executingStageIndex = -1;
     // Operators are already at end positions from execution.
-    // Clear their paths and reset movement state for next stage planning.
+    // Clear their paths, pie widgets, and reset movement state for next stage planning.
     for (const op of state.operators) {
       if (!op.deployed) continue;
       op.startPosition = { x: op.position.x, y: op.position.y };
       op.startAngle = op.angle;
       op.path.waypoints = [];
       op.path.splineLUT = null;
+      op.pieTarget = null;
       op.distanceTraveled = 0;
       op.currentWaypointIndex = 0;
       op.isHolding = false;
