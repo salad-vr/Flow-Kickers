@@ -14,11 +14,14 @@ export function createOperator(colorIndex: number): Operator {
     distanceTraveled: 0, currentWaypointIndex: 0,
     isHolding: false, isMoving: false, reachedEnd: false,
     startPosition: { x: 0, y: 0 }, startAngle: 0,
+    pieTarget: null,
+    smoothPosition: { x: 0, y: 0 },
   };
 }
 
 export function resetOperator(op: Operator) {
   op.position = { x: op.startPosition.x, y: op.startPosition.y };
+  op.smoothPosition = { x: op.startPosition.x, y: op.startPosition.y };
   op.angle = op.startAngle;
   op.distanceTraveled = 0; op.currentWaypointIndex = 0;
   op.isHolding = false; op.isMoving = false; op.reachedEnd = false;
@@ -27,6 +30,7 @@ export function resetOperator(op: Operator) {
 export function createDeployedOperator(pos: { x: number; y: number }, colorIndex: number): Operator {
   const op = createOperator(colorIndex);
   op.position = { x: pos.x, y: pos.y };
+  op.smoothPosition = { x: pos.x, y: pos.y };
   op.startPosition = { x: pos.x, y: pos.y };
   op.deployed = true;
   return op;

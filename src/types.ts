@@ -23,6 +23,9 @@ export interface Operator {
   distanceTraveled: number; currentWaypointIndex: number;
   isHolding: boolean; isMoving: boolean; reachedEnd: boolean;
   startPosition: Vec2; startAngle: number;
+  pieTarget: Vec2 | null;
+  /** Smoothed display position for aesthetic interpolation */
+  smoothPosition: Vec2;
 }
 
 export type AppScreen = 'menu' | 'game';
@@ -37,13 +40,39 @@ export type Interaction =
   | { type: 'dragging_node'; opId: number; wpIdx: number }
   | { type: 'setting_look_target'; opId: number; wpIdx: number }
   | { type: 'tempo_ring'; opId: number; wpIdx: number | null; centerAngle: number; startTempo: number }
-  | { type: 'spinning_direction'; opId: number };
+  | { type: 'spinning_direction'; opId: number }
+  | { type: 'placing_pie'; opId: number }
+  | { type: 'speed_slider'; opId: number; wpIdx: number | null; sliderValue: number };
 
 export interface NodePopup { opId: number; wpIdx: number; position: Vec2; }
 
 export interface Camera { x: number; y: number; zoom: number; }
 
-export type HudBtn = 'go' | 'reset' | 'menu' | 'gif' | null;
+export type HudBtn = 'go' | 'reset' | 'menu' | 'share' | null;
+
+export interface SharePanelState {
+  open: boolean;
+  exporting: boolean;
+  exportProgress: number;
+  gifBlob: Blob | null;
+  copiedRoomCode: boolean;
+}
+
+export type SharePanelBtn = 'close' | 'copy_code' | 'export_gif' | 'download_gif' | 'copy_link' | null;
+
+export interface PendingNode {
+  opId: number;
+  wpIdx: number; // index of the waypoint that was just placed
+}
+
+export interface SpeedSliderState {
+  /** Screen-space position of the slider popup */
+  screenPos: Vec2;
+  /** Current value 0.2 - 3.0 */
+  value: number;
+  /** Whether the user is actively dragging the slider thumb */
+  dragging: boolean;
+}
 
 export interface GameState {
   screen: AppScreen; mode: GameMode; room: Room;
@@ -57,6 +86,12 @@ export interface GameState {
   panStart: Vec2;
   panCamStart: Vec2;
   hoveredHudBtn: HudBtn;
+  sharePanel: SharePanelState;
+  hoveredShareBtn: SharePanelBtn;
+  /** Node that was just placed and needs confirm/cancel */
+  pendingNode: PendingNode | null;
+  /** Speed slider state when open */
+  speedSlider: SpeedSliderState | null;
 }
 
 export function makeWaypoint(pos: Vec2): Waypoint {

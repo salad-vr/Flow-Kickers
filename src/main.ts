@@ -1,5 +1,5 @@
 import './style.css';
-import type { GameState, Operator, Interaction, NodePopup, Room } from './types';
+import type { GameState, Operator, Interaction, NodePopup, Room, SharePanelBtn, PendingNode, SpeedSliderState } from './types';
 import type { Vec2 } from './math/vec2';
 import { C, OP_R, NODE_R, DEPLOY_PANEL_H, DEPLOY_OP_SPACING, GRID, DOOR_W, WALL_W, makeWaypoint } from './types';
 import { startGameLoop } from './core/gameLoop';
@@ -160,6 +160,10 @@ const state: GameState = {
   camera: { x: 0, y: 0, zoom: 1 },
   isPanning: false, panStart: { x: 0, y: 0 }, panCamStart: { x: 0, y: 0 },
   hoveredHudBtn: null,
+  sharePanel: { open: false, exporting: false, exportProgress: 0, gifBlob: null, copiedRoomCode: false },
+  hoveredShareBtn: null,
+  pendingNode: null,
+  speedSlider: null,
 };
 
 // ---- Build state ----
@@ -467,6 +471,8 @@ function startMission() {
   state.goCodesTriggered = { A: false, B: false, C: false };
   state.interaction = { type: 'idle' };
   state.popup = null;
+  state.pendingNode = null;
+  state.speedSlider = null;
   resetOperatorId();
   for (let i = 0; i < selOpCount; i++) {
     state.operators.push(createOperator(i));
@@ -495,6 +501,8 @@ function startCustomMission() {
   state.goCodesTriggered = { A: false, B: false, C: false };
   state.interaction = { type: 'idle' };
   state.popup = null;
+  state.pendingNode = null;
+  state.speedSlider = null;
   resetOperatorId();
   const entries = state.room.entryPoints;
   for (let i = 0; i < buildOpCount; i++) {
@@ -547,7 +555,9 @@ window.addEventListener('keydown', (e) => {
     case 'r': case 'R': doReset(); break;
     case 'Escape':
       state.popup = null;
-      if (state.interaction.type === 'placing_waypoints') state.interaction = { type: 'idle' };
+      state.pendingNode = null;
+      state.speedSlider = null;
+      if (state.interaction.type === 'placing_waypoints' || state.interaction.type === 'placing_pie' || state.interaction.type === 'speed_slider') state.interaction = { type: 'idle' };
       state.selectedOpId = null;
       break;
     case 'Delete': case 'Backspace': deleteSelected(); break;
@@ -559,7 +569,15 @@ function doGo() {
   const deployed = state.operators.filter(o => o.deployed);
   if (deployed.length === 0) return;
   state.popup = null;
+  state.pendingNode = null;
+  state.speedSlider = null;
   state.interaction = { type: 'idle' };
+  // Initialize smooth positions before execution starts
+  for (const op of state.operators) {
+    if (op.deployed) {
+      op.smoothPosition = { x: op.position.x, y: op.position.y };
+    }
+  }
   startExecution(state);
 }
 
@@ -569,6 +587,8 @@ function doReset() {
   state.roomCleared = false;
   state.goCodesTriggered = { A: false, B: false, C: false };
   state.popup = null;
+  state.pendingNode = null;
+  state.speedSlider = null;
   state.interaction = { type: 'idle' };
   for (const op of state.operators) if (op.deployed) resetOperator(op);
   for (const t of state.room.threats) { t.neutralized = false; t.neutralizeTimer = 0; }
@@ -583,13 +603,51 @@ function deleteSelected() {
   state.popup = null;
 }
 
-async function doExport() {
+function openSharePanel() {
+  state.sharePanel = { open: true, exporting: false, exportProgress: 0, gifBlob: null, copiedRoomCode: false };
+  state.hoveredShareBtn = null;
+  if (state.mode === 'executing') state.mode = 'paused';
+}
+
+function closeSharePanel() {
+  state.sharePanel.open = false;
+  state.hoveredShareBtn = null;
+}
+
+async function doExportGif() {
   if (!state.operators.some(op => op.path.waypoints.length >= 2)) return;
+  state.sharePanel.exporting = true;
+  state.sharePanel.exportProgress = 0;
+  state.sharePanel.gifBlob = null;
   try {
-    const blob = await exportGIF(state);
-    downloadBlob(blob, `flow-kickers-${Date.now()}.gif`);
+    const blob = await exportGIF(state, (p) => { state.sharePanel.exportProgress = p; });
+    state.sharePanel.gifBlob = blob;
   } catch (err) { console.error(err); }
+  state.sharePanel.exporting = false;
   doReset();
+}
+
+function downloadShareGif() {
+  if (state.sharePanel.gifBlob) {
+    downloadBlob(state.sharePanel.gifBlob, `flow-kickers-${Date.now()}.gif`);
+  }
+}
+
+function getRoomShareCode(): string {
+  return JSON.stringify({
+    w: state.room.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.hasDoor ? (w.doorOpen ? 1 : 2) : 0, w.doorPos]),
+    t: state.room.threats.map(t => [t.position.x, t.position.y]),
+    e: state.room.entryPoints.map(e => [e.x, e.y]),
+    f: state.room.floor.map(p => [p.x, p.y]),
+  });
+}
+
+function copyRoomCode() {
+  const code = getRoomShareCode();
+  navigator.clipboard.writeText(code).then(() => {
+    state.sharePanel.copiedRoomCode = true;
+    setTimeout(() => { state.sharePanel.copiedRoomCode = false; }, 2000);
+  }).catch(() => {});
 }
 
 // ---- Camera ----
@@ -648,6 +706,52 @@ function handleInput() {
   // Get world-space mouse position for all game interactions
   const worldMouse = screenToWorld(input.mousePos);
 
+  // Share panel interaction (blocks all other input when open)
+  if (state.sharePanel.open) {
+    const W = canvas.width, H = canvas.height;
+    const panelW = 320, panelH = 300;
+    const px = W / 2 - panelW / 2, py = H / 2 - panelH / 2;
+    const mx = input.mousePos.x, my = input.mousePos.y;
+
+    // Button layout constants
+    const btnW = panelW - 40, btnH = 34, btnX = px + 20;
+    const startY = py + 50;
+    const gap = 10;
+
+    state.hoveredShareBtn = null;
+    canvas.style.cursor = 'default';
+
+    if (mx >= px && mx <= px + panelW && my >= py && my <= py + panelH) {
+      // Close button (top-right)
+      if (hitBtn(input.mousePos, px + panelW - 32, py + 8, 24, 24)) {
+        state.hoveredShareBtn = 'close';
+        canvas.style.cursor = 'pointer';
+      }
+      // Copy Room Code button
+      else if (hitBtn(input.mousePos, btnX, startY, btnW, btnH)) {
+        state.hoveredShareBtn = 'copy_code';
+        canvas.style.cursor = 'pointer';
+      }
+      // Export GIF / Download GIF button
+      else if (!state.sharePanel.exporting && hitBtn(input.mousePos, btnX, startY + btnH + gap + 20, btnW, btnH)) {
+        state.hoveredShareBtn = state.sharePanel.gifBlob ? 'download_gif' : 'export_gif';
+        canvas.style.cursor = 'pointer';
+      }
+    }
+
+    if (input.justPressed) {
+      if (state.hoveredShareBtn === 'close') { closeSharePanel(); }
+      else if (state.hoveredShareBtn === 'copy_code') { copyRoomCode(); }
+      else if (state.hoveredShareBtn === 'export_gif') { doExportGif(); }
+      else if (state.hoveredShareBtn === 'download_gif') { downloadShareGif(); }
+      // Click outside panel closes it (but not during export)
+      else if (!state.sharePanel.exporting && !(mx >= px && mx <= px + panelW && my >= py && my <= py + panelH)) {
+        closeSharePanel();
+      }
+    }
+    return; // block all other input while share panel is open
+  }
+
   // HUD hover detection (runs every frame, all modes)
   const hudBarY = canvas.height - 36;
   const W = canvas.width;
@@ -657,7 +761,7 @@ function handleInput() {
     if (hitBtn(input.mousePos, W / 2 - 40, btnY, 80, 26)) state.hoveredHudBtn = 'go';
     else if (hitBtn(input.mousePos, W / 2 + 50, btnY, 60, 26)) state.hoveredHudBtn = 'reset';
     else if (hitBtn(input.mousePos, W / 2 - 110, btnY, 60, 26)) state.hoveredHudBtn = 'menu';
-    else if (hitBtn(input.mousePos, W - 56, btnY, 48, 26)) state.hoveredHudBtn = 'gif';
+    else if (hitBtn(input.mousePos, W - 64, btnY, 56, 26)) state.hoveredHudBtn = 'share';
     else state.hoveredHudBtn = null;
     if (state.hoveredHudBtn) canvas.style.cursor = 'pointer';
   } else {
@@ -674,12 +778,54 @@ function handleInput() {
     }
     else if (hitBtn(input.mousePos, W / 2 + 50, btnY, 60, 26)) doReset();
     else if (hitBtn(input.mousePos, W / 2 - 110, btnY, 60, 26)) show('menu');
-    else if (hitBtn(input.mousePos, W - 56, btnY, 48, 26)) doExport();
+    else if (hitBtn(input.mousePos, W - 64, btnY, 56, 26)) openSharePanel();
     return; // always consume clicks in HUD bar
   }
 
   if (state.mode === 'executing') return;
   const inter = state.interaction;
+
+  // Speed slider interaction (takes priority when open)
+  if (state.speedSlider && state.interaction.type === 'speed_slider') {
+    const slider = state.speedSlider;
+    const inter = state.interaction;
+    const sliderX = slider.screenPos.x;
+    const sliderY = slider.screenPos.y;
+    const sliderW = 120, sliderH = 30;
+    const trackX = sliderX + 10, trackW = sliderW - 20;
+    const trackY = sliderY + sliderH / 2;
+
+    // Check if mouse is near the slider track for dragging
+    if (input.justPressed) {
+      if (input.mousePos.x >= sliderX && input.mousePos.x <= sliderX + sliderW &&
+          input.mousePos.y >= sliderY - 5 && input.mousePos.y <= sliderY + sliderH + 5) {
+        slider.dragging = true;
+      } else {
+        // Click outside slider - close it and apply
+        state.speedSlider = null;
+        state.interaction = { type: 'idle' };
+        state.popup = null;
+        return;
+      }
+    }
+    if (slider.dragging && input.mouseDown) {
+      const frac = Math.max(0, Math.min(1, (input.mousePos.x - trackX) / trackW));
+      const newTempo = Math.round((0.2 + frac * 2.8) * 10) / 10;
+      slider.value = newTempo;
+      const op = state.operators.find(o => o.id === inter.opId);
+      if (op) {
+        if (inter.wpIdx !== null) {
+          op.path.waypoints[inter.wpIdx].tempo = newTempo;
+        } else {
+          op.tempo = newTempo;
+        }
+      }
+    }
+    if (input.justReleased) {
+      slider.dragging = false;
+    }
+    return;
+  }
 
   if (state.popup && input.justPressed) {
     // Check if clicking a popup menu item
@@ -691,8 +837,8 @@ function handleInput() {
     const isOp = pop.wpIdx < 0;
     const items = isOp
       ? ['Draw Path', 'Direction', 'Speed', 'Clear Path']
-      : ['Hold', 'Look At', 'Speed', 'Delete'];
-    const iw = 70, ih = 24, gap = 4;
+      : ['Set Direction', 'Delete Node', 'Add Route', 'Speed'];
+    const iw = 80, ih = 24, gap = 4;
     const totalH = items.length * (ih + gap) - gap;
     const px = sp.x + 20, py = sp.y - totalH / 2;
 
@@ -704,7 +850,7 @@ function handleInput() {
 
     if (clicked >= 0 && op) {
       if (isOp) {
-        // Operator popup: Draw Path, Speed, Clear Path
+        // Operator popup: Draw Path, Direction, Speed, Clear Path
         if (items[clicked] === 'Draw Path') {
           op.path.waypoints = [makeWaypoint(op.position)];
           op.path.splineLUT = null;
@@ -712,26 +858,37 @@ function handleInput() {
         } else if (items[clicked] === 'Direction') {
           state.interaction = { type: 'spinning_direction', opId: op.id };
         } else if (items[clicked] === 'Speed') {
-          state.interaction = { type: 'tempo_ring', opId: op.id, wpIdx: null, centerAngle: 0, startTempo: op.tempo };
+          // Open speed slider for operator
+          const sliderPos = { x: sp.x + 20, y: sp.y + 20 };
+          state.speedSlider = { screenPos: sliderPos, value: op.tempo, dragging: false };
+          state.interaction = { type: 'speed_slider', opId: op.id, wpIdx: null, sliderValue: op.tempo };
+          state.popup = null;
+          return;
         } else if (items[clicked] === 'Clear Path') {
           op.path.waypoints = [];
           op.path.splineLUT = null;
         }
       } else {
-        // Node popup: Hold, Look At, Speed, Delete
+        // Node popup: Set Direction, Delete Node, Add Route, Speed
         const wp = op.path.waypoints[pop.wpIdx];
-        if (items[clicked] === 'Hold') {
-          wp.hold = !wp.hold;
-          if (wp.hold && !wp.goCode) wp.goCode = 'A';
-        } else if (items[clicked] === 'Look At') {
-          state.interaction = { type: 'setting_look_target', opId: op.id, wpIdx: pop.wpIdx };
-        } else if (items[clicked] === 'Speed') {
-          state.interaction = { type: 'tempo_ring', opId: op.id, wpIdx: pop.wpIdx, centerAngle: 0, startTempo: wp.tempo };
-        } else if (items[clicked] === 'Delete') {
+        if (items[clicked] === 'Set Direction') {
+          // Enter facing mode for this specific waypoint
+          state.interaction = { type: 'setting_facing', opId: op.id, wpIdx: pop.wpIdx };
+        } else if (items[clicked] === 'Delete Node') {
           if (op.path.waypoints.length > 2) {
             op.path.waypoints.splice(pop.wpIdx, 1);
             rebuildPathLUT(op);
           }
+        } else if (items[clicked] === 'Add Route') {
+          // Continue routing from the last waypoint
+          state.interaction = { type: 'placing_waypoints', opId: op.id };
+        } else if (items[clicked] === 'Speed') {
+          // Open speed slider for waypoint
+          const sliderPos = { x: sp.x + 20, y: sp.y + 20 };
+          state.speedSlider = { screenPos: sliderPos, value: wp.tempo, dragging: false };
+          state.interaction = { type: 'speed_slider', opId: op.id, wpIdx: pop.wpIdx, sliderValue: wp.tempo };
+          state.popup = null;
+          return;
         }
       }
     }
@@ -745,6 +902,7 @@ function handleInput() {
     if (input.justReleased && op) {
       op.deployed = true;
       op.startPosition = copy(op.position);
+      op.smoothPosition = copy(op.position);
       op.angle = 0; // face right when placed
       op.startAngle = 0;
       state.interaction = { type: 'idle' };
@@ -768,33 +926,71 @@ function handleInput() {
     return;
   }
 
+  // Handle pending node confirm/cancel buttons (only while in placing_waypoints mode)
+  if (state.pendingNode && inter.type === 'placing_waypoints' && input.justPressed) {
+    const pn = state.pendingNode;
+    const op = state.operators.find(o => o.id === pn.opId);
+    if (op && pn.wpIdx < op.path.waypoints.length) {
+      const wp = op.path.waypoints[pn.wpIdx];
+      const cam2 = state.camera;
+      const sp2 = {
+        x: (wp.position.x - cam2.x) * cam2.zoom + canvas.width / 2,
+        y: (wp.position.y - cam2.y) * cam2.zoom + canvas.height / 2,
+      };
+      // Check mark button (right side of node)
+      const checkX = sp2.x + 14, checkY = sp2.y - 8, btnSize = 16;
+      if (hitBtn(input.mousePos, checkX, checkY, btnSize, btnSize)) {
+        // Confirm: keep the node, clear pending
+        state.pendingNode = null;
+        // Stay in placing_waypoints mode so they can continue
+        return;
+      }
+      // X button (left side of node)
+      const cancelX = sp2.x - 14 - btnSize, cancelY = sp2.y - 8;
+      if (hitBtn(input.mousePos, cancelX, cancelY, btnSize, btnSize)) {
+        // Cancel: remove the node
+        op.path.waypoints.splice(pn.wpIdx, 1);
+        rebuildPathLUT(op);
+        state.pendingNode = null;
+        // Stay in placing_waypoints mode
+        return;
+      }
+    }
+  }
+
   if (inter.type === 'placing_waypoints') {
     const op = state.operators.find(o => o.id === inter.opId);
     if (input.justPressed && op) {
       // check if clicking in deploy bar area - cancel waypoint placing
       const hudBarY = canvas.height - 36;
       const deployBarY = hudBarY - DEPLOY_PANEL_H - 4;
-      if (input.mousePos.y > deployBarY) { state.interaction = { type: 'idle' }; return; }
+      if (input.mousePos.y > deployBarY) { state.interaction = { type: 'idle' }; state.pendingNode = null; return; }
       op.path.waypoints.push(makeWaypoint(worldMouse));
       rebuildPathLUT(op);
+      // Set this as pending node needing confirm/cancel
+      state.pendingNode = { opId: op.id, wpIdx: op.path.waypoints.length - 1 };
     }
-    if (input.rightJustPressed && op) state.interaction = { type: 'idle' };
+    if (input.rightJustPressed && op) { state.interaction = { type: 'idle' }; state.pendingNode = null; }
     return;
   }
 
   if (inter.type === 'setting_facing') {
     const op = state.operators.find(o => o.id === inter.opId);
-    if (op && input.rightMouseDown) {
+    if (op) {
       const target = inter.wpIdx !== null ? op.path.waypoints[inter.wpIdx] : null;
       const origin = target ? target.position : op.position;
+      // Continuously preview facing direction toward mouse
       const dx = worldMouse.x - origin.x, dy = worldMouse.y - origin.y;
       if (dx * dx + dy * dy > 64) {
         const a = Math.atan2(dy, dx);
-        if (target) { target.facingOverride = a; target.lookTarget = null; }
-        else { op.angle = a; op.startAngle = a; }
+        if (input.rightMouseDown || input.mouseDown) {
+          if (target) { target.facingOverride = a; target.lookTarget = null; }
+          else { op.angle = a; op.startAngle = a; }
+        }
       }
     }
-    if (input.rightJustReleased) state.interaction = { type: 'idle' };
+    // Left-click or right-click release confirms
+    if (input.justReleased || input.rightJustReleased) state.interaction = { type: 'idle' };
     return;
   }
 
@@ -851,6 +1047,29 @@ function handleInput() {
     }
     // Right-click also exits
     if (input.rightJustPressed) {
+      state.interaction = { type: 'idle' };
+      return;
+    }
+    return;
+  }
+
+  if (inter.type === 'placing_pie') {
+    const op = state.operators.find(o => o.id === inter.opId);
+    if (input.justPressed && op) {
+      op.pieTarget = copy(worldMouse);
+      // Set initial facing toward pie target
+      const dx = worldMouse.x - op.position.x;
+      const dy = worldMouse.y - op.position.y;
+      if (dx * dx + dy * dy > 16) {
+        op.angle = Math.atan2(dy, dx);
+        op.startAngle = op.angle;
+      }
+      state.interaction = { type: 'idle' };
+      return;
+    }
+    if (input.rightJustPressed) {
+      // Right-click cancels, also clears existing pie target
+      if (op) op.pieTarget = null;
       state.interaction = { type: 'idle' };
       return;
     }
