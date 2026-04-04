@@ -189,6 +189,9 @@ const state: GameState = {
   currentStageIndex: 0,
   executingStageIndex: -1,
   isReplaying: false,
+  stageJustCompleted: false,
+  preGoSnapshot: null,
+  viewingStageIndex: -1,
 };
 
 // ---- Build state ----
