@@ -69,8 +69,6 @@ export function updatePathFollowing(op: Operator, dt: number, state: GameState):
   }
 
   op.position = getPointAtDistance(lut, op.distanceTraveled);
-  const tan = getTangentAtDistance(lut, op.distanceTraveled);
-  let target = vecAngle(tan);
 
   // Advance waypoint index
   const wc = op.path.waypoints.length;
@@ -85,17 +83,23 @@ export function updatePathFollowing(op: Operator, dt: number, state: GameState):
     }
   }
 
+  // Determine facing target
+  let target: number;
   const aw = op.path.waypoints[op.currentWaypointIndex];
+
   if (aw?.lookTarget) {
+    // Explicit look-at target on this waypoint (highest priority)
     target = Math.atan2(aw.lookTarget.y - op.position.y, aw.lookTarget.x - op.position.x);
   } else if (aw?.facingOverride !== null && aw.facingOverride !== undefined) {
-    // Waypoint direction override takes precedence over pie target
-    const wd2 = (op.currentWaypointIndex / (wc - 1)) * lut.totalLength;
-    const d = Math.abs(wd2 - op.distanceTraveled);
-    if (d < 50) target = lerpAngle(target, aw.facingOverride, 1 - d / 50);
+    // Explicit direction set on this waypoint overrides pie
+    target = aw.facingOverride;
   } else if (op.pieTarget) {
-    // Pie target: operator continuously faces toward the pizza throughout the route
+    // Pie target: continuously face toward the pizza (smooth tracking)
     target = Math.atan2(op.pieTarget.y - op.position.y, op.pieTarget.x - op.position.x);
+  } else {
+    // Default: follow spline tangent
+    const tan = getTangentAtDistance(lut, op.distanceTraveled);
+    target = vecAngle(tan);
   }
 
   op.angle = lerpAngle(op.angle, target, Math.min(1, TURN * dt));

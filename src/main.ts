@@ -1483,12 +1483,17 @@ function saveStage() {
   for (const op of deployed) {
     if (op.path.waypoints.length >= 2) {
       const lastWp = op.path.waypoints[op.path.waypoints.length - 1];
-      op.position = { x: lastWp.position.x, y: lastWp.position.y };
-      op.startPosition = { x: lastWp.position.x, y: lastWp.position.y };
+      const endPos = { x: lastWp.position.x, y: lastWp.position.y };
+      op.position = { x: endPos.x, y: endPos.y };
+      op.startPosition = { x: endPos.x, y: endPos.y };
+      // Compute end angle: explicit facingOverride > pie target > keep current
       if (lastWp.facingOverride !== null) {
         op.angle = lastWp.facingOverride;
-        op.startAngle = lastWp.facingOverride;
+      } else if (op.pieTarget) {
+        const dx = op.pieTarget.x - endPos.x, dy = op.pieTarget.y - endPos.y;
+        if (dx * dx + dy * dy > 1) op.angle = Math.atan2(dy, dx);
       }
+      op.startAngle = op.angle;
     }
     // Clear paths and pie for next stage planning
     op.path.waypoints = [];
@@ -1606,8 +1611,19 @@ function checkStageCompletion() {
 
   const nextStage = state.executingStageIndex + 1;
   if (nextStage < state.stages.length) {
+    // Capture current angles before loading next stage (for smooth transitions)
+    const endAngles: Record<number, number> = {};
+    for (const op of state.operators) {
+      if (op.deployed) endAngles[op.id] = op.angle;
+    }
     // Advance to next stage
     loadAndExecuteStage(nextStage);
+    // Use execution end-angles for operators so transitions are seamless
+    for (const op of state.operators) {
+      if (op.deployed && endAngles[op.id] !== undefined) {
+        op.angle = endAngles[op.id];
+      }
+    }
   } else {
     // All stages done - pause and prompt to save stage
     state.mode = 'paused';
@@ -1844,24 +1860,15 @@ function hitBtn(mouse: Vec2, x: number, y: number, w: number, h: number): boolea
   return mouse.x >= x && mouse.x <= x + w && mouse.y >= y && mouse.y <= y + h;
 }
 
-/** Bake pie target direction into waypoints so facing persists after pie is removed */
+/** Bake pie target direction into operator startAngle so facing persists after pie is removed */
 function bakePieDirection(op: Operator) {
   if (!op.pieTarget) return;
   const pie = op.pieTarget;
-  // Set startAngle to face the pie target
-  const dx0 = pie.x - op.position.x, dy0 = pie.y - op.position.y;
-  if (dx0 * dx0 + dy0 * dy0 > 1) {
-    op.angle = Math.atan2(dy0, dx0);
+  // Set startAngle to face the pie target from the operator's current position
+  const dx = pie.x - op.position.x, dy = pie.y - op.position.y;
+  if (dx * dx + dy * dy > 1) {
+    op.angle = Math.atan2(dy, dx);
     op.startAngle = op.angle;
-  }
-  // Bake into each waypoint that doesn't already have a facingOverride or lookTarget
-  for (const wp of op.path.waypoints) {
-    if (wp.facingOverride === null && !wp.lookTarget) {
-      const dx = pie.x - wp.position.x, dy = pie.y - wp.position.y;
-      if (dx * dx + dy * dy > 1) {
-        wp.facingOverride = Math.atan2(dy, dx);
-      }
-    }
   }
 }
 
