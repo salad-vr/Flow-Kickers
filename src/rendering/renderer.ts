@@ -5,6 +5,8 @@ import { computeOperatorFOV } from '../operator/visibility';
 import type { Vec2 } from '../math/vec2';
 import type { Wall } from '../math/intersection';
 
+let roomClearedAnimT = 0;
+
 function worldToScreen(p: Vec2, cam: Camera, W: number, H: number): Vec2 {
   return {
     x: (p.x - cam.x) * cam.zoom + W / 2,
@@ -149,15 +151,43 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
   // Pending node confirm/cancel buttons (screen space)
   drawPendingNodeButtons(ctx, state);
 
-  // Room cleared overlay (screen space)
+  // Room cleared overlay (screen space) - with smooth animation
   if (state.roomCleared) {
-    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(0, 0, W, H);
+    // Track animation progress
+    if (!roomClearedAnimT) roomClearedAnimT = performance.now();
+    const elapsed = (performance.now() - roomClearedAnimT) / 1000;
+    const fadeIn = Math.min(1, elapsed / 0.4); // 0.4s fade
+    const scaleT = Math.min(1, elapsed / 0.35);
+    const eased = 1 - Math.pow(1 - scaleT, 3); // ease-out cubic
+    const bannerScale = 0.85 + 0.15 * eased;
+
+    ctx.save();
+    ctx.globalAlpha = fadeIn * 0.3;
+    ctx.fillStyle = 'rgba(0,0,0,1)'; ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = fadeIn;
+    
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(bannerScale, bannerScale);
+    ctx.translate(-W / 2, -H / 2);
+
     ctx.fillStyle = 'rgba(10,30,20,0.9)';
     const bx = W / 2 - 130, by = H / 2 - 30;
-    ctx.fillRect(bx, by, 260, 60);
-    ctx.strokeStyle = C.cleared; ctx.lineWidth = 2; ctx.strokeRect(bx, by, 260, 60);
+    // Rounded rectangle for banner
+    ctx.beginPath();
+    ctx.roundRect(bx, by, 260, 60, 8);
+    ctx.fill();
+    ctx.strokeStyle = C.cleared; ctx.lineWidth = 2;
+    ctx.stroke();
+    // Subtle glow
+    ctx.shadowColor = C.cleared;
+    ctx.shadowBlur = 20;
     ctx.fillStyle = C.cleared; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('ROOM CLEARED', W / 2, H / 2); ctx.textBaseline = 'alphabetic';
+    ctx.fillText('ROOM CLEARED', W / 2, H / 2);
+    ctx.shadowBlur = 0;
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+  } else {
+    roomClearedAnimT = 0;
   }
 
   // Share panel overlay
@@ -516,7 +546,7 @@ function drawRadialIcon(ctx: CanvasRenderingContext2D, cx: number, cy: number, i
 
 function drawRadialMenu(ctx: CanvasRenderingContext2D, menu: RadialMenu, state: GameState) {
   const items = getRadialItems(menu.wpIdx);
-  const t = menu.animT;
+  const t = Math.min(1, menu.animT);
   const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
 
   const op = state.operators.find(o => o.id === menu.opId);
@@ -568,10 +598,16 @@ function drawRadialMenu(ctx: CanvasRenderingContext2D, menu: RadialMenu, state: 
   ctx.restore();
 }
 
+let deployPanelAnimT = 0;
+
 function drawDeployPanel(ctx: CanvasRenderingContext2D, state: GameState, H: number) {
-  if (state.mode !== 'planning') return;
+  if (state.mode !== 'planning') { deployPanelAnimT = 0; return; }
   const undeployed = state.operators.filter(o => !o.deployed);
-  if (undeployed.length === 0) return;
+  if (undeployed.length === 0) { deployPanelAnimT = 0; return; }
+
+  // Smooth entrance
+  deployPanelAnimT = Math.min(1, deployPanelAnimT + 0.06);
+  const eased = 1 - Math.pow(1 - deployPanelAnimT, 3);
 
   const hudBarY = H - 36;
   const barY = hudBarY - DEPLOY_PANEL_H - 4;
@@ -579,30 +615,41 @@ function drawDeployPanel(ctx: CanvasRenderingContext2D, state: GameState, H: num
   const barH = DEPLOY_PANEL_H;
   const deployY = barY + barH / 2;
 
-  // Background
+  // Slide up from below
+  const slideOffset = (1 - eased) * 30;
+
+  ctx.save();
+  ctx.globalAlpha = eased;
+  ctx.translate(0, slideOffset);
+
+  // Background with rounded corners
+  ctx.beginPath();
+  ctx.roundRect(8, barY, barW, barH, 6);
   ctx.fillStyle = C.panelBg;
-  ctx.fillRect(8, barY, barW, barH);
+  ctx.fill();
 
   // Dotted border
   ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
   ctx.setLineDash([5, 4]);
-  ctx.strokeRect(8, barY, barW, barH);
+  ctx.stroke();
   ctx.setLineDash([]);
 
   // Label above
   ctx.fillStyle = C.hudText; ctx.font = '9px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
   ctx.fillText('DRAG OPERATORS INTO PLACE', 12, barY - 4);
 
-  // Operators in a horizontal row facing right
+  // Operators in a horizontal row facing right - with subtle idle bob
+  const t = performance.now() / 1000;
   for (let i = 0; i < undeployed.length; i++) {
     const op = undeployed[i];
     const ox = 30 + i * DEPLOY_OP_SPACING;
+    const bob = Math.sin(t * 2 + i * 0.8) * 1.5; // subtle floating effect
 
     ctx.save();
-    ctx.translate(ox, deployY);
+    ctx.translate(ox, deployY + bob);
     ctx.rotate(0); // facing right
 
-    // Draw chevron shape (same as game operator but slightly larger for grab-ability)
+    // Draw chevron shape
     const r = OP_R + 2;
     const tip = r + 3, back = -r + 1, side = r - 1, notch = -r * 0.25;
     ctx.beginPath();
@@ -617,15 +664,22 @@ function drawDeployPanel(ctx: CanvasRenderingContext2D, state: GameState, H: num
     ctx.strokeStyle = C.opOutline; ctx.lineWidth = 0.8; ctx.stroke();
     ctx.restore();
   }
+  ctx.restore();
 }
 
 function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: number) {
   const barH = 36, barY = H - barH;
   const hov = state.hoveredHudBtn;
 
-  // Bar background
+  // Bar background with subtle gradient feel
   ctx.fillStyle = C.hud;
   ctx.fillRect(0, barY, W, barH);
+  // Top border with glow
+  const hudGrad = ctx.createLinearGradient(0, barY, 0, barY + 2);
+  hudGrad.addColorStop(0, 'rgba(30,51,82,0.6)');
+  hudGrad.addColorStop(1, 'rgba(30,51,82,0)');
+  ctx.fillStyle = hudGrad;
+  ctx.fillRect(0, barY, W, 2);
   ctx.strokeStyle = C.hudBorder; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(0, barY); ctx.lineTo(W, barY); ctx.stroke();
 
@@ -685,13 +739,25 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
   ctx.fillText(`${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`, W - 78, cy);
   drawHudBtn(ctx, W - 64, by, 56, 26, 'SHARE', C.hudText, hov === 'share');
 
-  // Mode indicator top-right
-  ctx.fillStyle = C.hud; ctx.fillRect(W - 110, 8, 102, 22);
-  ctx.strokeStyle = mode === 'executing' ? C.cleared : C.accent; ctx.lineWidth = 1;
-  ctx.strokeRect(W - 110, 8, 102, 22);
+  // Mode indicator top-right (rounded, polished)
+  ctx.beginPath();
+  ctx.roundRect(W - 114, 8, 106, 24, 6);
+  ctx.fillStyle = C.hud;
+  ctx.fill();
+  ctx.strokeStyle = mode === 'executing' ? C.cleared : 'rgba(232,223,198,0.25)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // Subtle pulse for executing
+  if (mode === 'executing') {
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 500);
+    ctx.globalAlpha = 0.15 * pulse;
+    ctx.fillStyle = C.cleared;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
   ctx.fillStyle = mode === 'executing' ? C.cleared : C.hudBright;
   ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-  ctx.fillText(mode.toUpperCase(), W - 14, 19);
+  ctx.fillText(mode.toUpperCase(), W - 16, 20);
   ctx.textBaseline = 'alphabetic';
 
   // Flow Kickers logo top-left - matches menu title style
@@ -718,27 +784,52 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
   ctx.restore();
 }
 
-function drawHudBtn(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, label: string, color: string, hovered: boolean = false) {
-  const r = 4; // border radius
+// Track hover animation per button for smooth transitions
+const hudBtnHoverT: Record<string, number> = {};
+
+function drawHudBtn(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, label: string, color: string, hovered: boolean = false, btnKey: string = label) {
+  const r = 5; // border radius
+  
+  // Smooth hover interpolation
+  if (!hudBtnHoverT[btnKey]) hudBtnHoverT[btnKey] = 0;
+  const target = hovered ? 1 : 0;
+  hudBtnHoverT[btnKey] += (target - hudBtnHoverT[btnKey]) * 0.2;
+  const t = hudBtnHoverT[btnKey];
+
+  // Hover lift effect
+  const lift = t * 1.5;
+  const drawY = y - lift;
 
   // Background
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, r);
-  ctx.fillStyle = hovered ? 'rgba(40,55,75,0.95)' : 'rgba(18,30,48,0.85)';
+  ctx.roundRect(x, drawY, w, h, r);
+  
+  // Interpolated background
+  const bgR = 18 + 22 * t, bgG = 30 + 25 * t, bgB = 48 + 27 * t;
+  ctx.fillStyle = `rgba(${bgR},${bgG},${bgB},${0.85 + 0.1 * t})`;
   ctx.fill();
 
-  // Border
-  ctx.strokeStyle = hovered ? C.accent : C.hudBorder;
-  ctx.lineWidth = 1;
+  // Border with glow on hover
+  if (t > 0.05) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6 * t;
+  }
+  const borderR = 30 + 202 * t, borderG = 51 + 172 * t, borderB = 82 + 116 * t;
+  ctx.strokeStyle = `rgba(${borderR},${borderG},${borderB},${0.5 + 0.5 * t})`;
+  ctx.lineWidth = 1 + 0.5 * t;
   ctx.stroke();
+  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
 
   // Label
-  ctx.fillStyle = hovered ? C.hudBright : color;
+  const textAlpha = 0.7 + 0.3 * t;
+  ctx.fillStyle = t > 0.5 ? C.hudBright : color;
+  ctx.globalAlpha = textAlpha;
   ctx.font = 'bold 10px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label, x + w / 2, y + h / 2);
+  ctx.fillText(label, x + w / 2, drawY + h / 2);
   ctx.textBaseline = 'alphabetic';
+  ctx.globalAlpha = 1;
 }
 
 function drawPopup(ctx: CanvasRenderingContext2D, popup: NodePopup, state: GameState) {
@@ -849,11 +940,21 @@ function drawSpeedSlider(ctx: CanvasRenderingContext2D, slider: SpeedSliderState
   ctx.textBaseline = 'alphabetic';
 }
 
+let pendingNodeAnimT = 0;
+let lastPendingNodeId = -1;
+
 function drawPendingNodeButtons(ctx: CanvasRenderingContext2D, state: GameState) {
-  if (!state.pendingNode) return;
+  if (!state.pendingNode) { pendingNodeAnimT = 0; lastPendingNodeId = -1; return; }
   const pn = state.pendingNode;
   const op = state.operators.find(o => o.id === pn.opId);
   if (!op || pn.wpIdx >= op.path.waypoints.length) return;
+  
+  // Reset animation when a new node is pending
+  const nodeKey = pn.opId * 1000 + pn.wpIdx;
+  if (nodeKey !== lastPendingNodeId) { pendingNodeAnimT = 0; lastPendingNodeId = nodeKey; }
+  pendingNodeAnimT = Math.min(1, pendingNodeAnimT + 0.12);
+  const eased = 1 - Math.pow(1 - pendingNodeAnimT, 3);
+
   const wp = op.path.waypoints[pn.wpIdx];
   const cam = state.camera;
   const W = ctx.canvas.width, H = ctx.canvas.height;
@@ -862,36 +963,40 @@ function drawPendingNodeButtons(ctx: CanvasRenderingContext2D, state: GameState)
     y: (wp.position.y - cam.y) * cam.zoom + H / 2,
   };
 
-  const btnSize = 16;
-  const offset = 14;
+  const btnSize = 18;
+  const offset = 16;
 
-  // Checkmark button (right side)
-  const checkX = sp.x + offset, checkY = sp.y - btnSize / 2;
+  ctx.save();
+  ctx.globalAlpha = eased;
+
+  // Checkmark button (right side) - slides in from center
+  const checkXTarget = sp.x + offset;
+  const checkX = sp.x + offset * eased;
+  const checkY = sp.y - btnSize / 2;
   ctx.beginPath();
-  ctx.roundRect(checkX, checkY, btnSize, btnSize, 3);
-  ctx.fillStyle = 'rgba(85,170,102,0.85)';
+  ctx.roundRect(checkX, checkY, btnSize, btnSize, 5);
+  ctx.fillStyle = 'rgba(85,170,102,0.9)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(85,170,102,1)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(120,200,140,0.8)'; ctx.lineWidth = 1;
   ctx.stroke();
-  // Draw checkmark
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.moveTo(checkX + 3, checkY + btnSize / 2);
-  ctx.lineTo(checkX + btnSize / 2 - 1, checkY + btnSize - 4);
-  ctx.lineTo(checkX + btnSize - 3, checkY + 4);
+  ctx.moveTo(checkX + 4, checkY + btnSize / 2);
+  ctx.lineTo(checkX + btnSize / 2 - 1, checkY + btnSize - 5);
+  ctx.lineTo(checkX + btnSize - 4, checkY + 5);
   ctx.stroke();
 
-  // X button (left side)
-  const cancelX = sp.x - offset - btnSize, cancelY = sp.y - btnSize / 2;
+  // X button (left side) - slides in from center
+  const cancelX = sp.x - offset * eased - btnSize;
+  const cancelY = sp.y - btnSize / 2;
   ctx.beginPath();
-  ctx.roundRect(cancelX, cancelY, btnSize, btnSize, 3);
-  ctx.fillStyle = 'rgba(204,68,51,0.85)';
+  ctx.roundRect(cancelX, cancelY, btnSize, btnSize, 5);
+  ctx.fillStyle = 'rgba(204,68,51,0.9)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(204,68,51,1)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(230,100,80,0.8)'; ctx.lineWidth = 1;
   ctx.stroke();
-  // Draw X
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-  const xPad = 4;
+  const xPad = 5;
   ctx.beginPath();
   ctx.moveTo(cancelX + xPad, cancelY + xPad);
   ctx.lineTo(cancelX + btnSize - xPad, cancelY + btnSize - xPad);
@@ -900,48 +1005,87 @@ function drawPendingNodeButtons(ctx: CanvasRenderingContext2D, state: GameState)
   ctx.moveTo(cancelX + btnSize - xPad, cancelY + xPad);
   ctx.lineTo(cancelX + xPad, cancelY + btnSize - xPad);
   ctx.stroke();
+
+  ctx.restore();
 }
 
 // ---- Share Panel ----
+
+const shareBtnHoverT: Record<string, number> = {};
 
 function drawSharePanelBtn(
   ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
   label: string, color: string, hovered: boolean, disabled: boolean = false,
 ) {
-  const r = 5;
+  const r = 6;
+  
+  // Smooth hover interpolation
+  const key = label;
+  if (!shareBtnHoverT[key]) shareBtnHoverT[key] = 0;
+  shareBtnHoverT[key] += ((hovered ? 1 : 0) - shareBtnHoverT[key]) * 0.2;
+  const t = shareBtnHoverT[key];
+
+  const lift = disabled ? 0 : t * 1;
+  
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, r);
+  ctx.roundRect(x, y - lift, w, h, r);
   if (disabled) {
     ctx.fillStyle = 'rgba(18,30,48,0.5)';
-  } else if (hovered) {
-    ctx.fillStyle = 'rgba(40,60,85,0.95)';
   } else {
-    ctx.fillStyle = 'rgba(22,38,60,0.9)';
+    const bgR = 22 + 18 * t, bgG = 38 + 22 * t, bgB = 60 + 25 * t;
+    ctx.fillStyle = `rgba(${bgR},${bgG},${bgB},${0.9 + 0.05 * t})`;
   }
   ctx.fill();
+  
+  if (!disabled && t > 0.05) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 4 * t;
+  }
   ctx.strokeStyle = hovered && !disabled ? C.accent : C.hudBorder;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 1 + 0.5 * t;
   ctx.stroke();
-  ctx.fillStyle = disabled ? 'rgba(138,131,110,0.4)' : (hovered ? C.hudBright : color);
+  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+  
+  ctx.fillStyle = disabled ? 'rgba(138,131,110,0.4)' : (t > 0.5 ? C.hudBright : color);
   ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label, x + w / 2, y + h / 2);
+  ctx.fillText(label, x + w / 2, y - lift + h / 2);
   ctx.textBaseline = 'alphabetic';
 }
+
+let sharePanelAnimT = 0;
+
+export function resetSharePanelAnim() { sharePanelAnimT = 0; }
 
 function drawSharePanel(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: number) {
   const hov = state.hoveredShareBtn;
   const sp = state.sharePanel;
 
+  // Animate open
+  sharePanelAnimT = Math.min(1, sharePanelAnimT + 0.1);
+  const eased = 1 - Math.pow(1 - sharePanelAnimT, 3);
+
   // Dimmed backdrop
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.save();
+  ctx.globalAlpha = eased * 0.55;
+  ctx.fillStyle = 'rgba(0,0,0,1)';
   ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = eased;
+  ctx.restore();
 
   // Panel dimensions - taller to fit re-export
   const panelW = 340, panelH = sp.gifBlob ? 330 : 300;
   const px = W / 2 - panelW / 2, py = H / 2 - panelH / 2;
   const r = 8;
+
+  // Animate panel scale/position
+  ctx.save();
+  const panelScale = 0.92 + 0.08 * eased;
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(panelScale, panelScale);
+  ctx.globalAlpha = eased;
+  ctx.translate(-W / 2, -H / 2);
 
   // Panel shadow
   ctx.shadowColor = 'rgba(0,0,0,0.4)';
@@ -1088,4 +1232,6 @@ function drawSharePanel(ctx: CanvasRenderingContext2D, state: GameState, W: numb
   ctx.textBaseline = 'middle';
   ctx.fillText('Click outside or press ESC to close', W / 2, py + panelH - 14);
   ctx.textBaseline = 'alphabetic';
+
+  ctx.restore(); // restore panel scale transform
 }

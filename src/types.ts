@@ -146,7 +146,7 @@ export const C = {
   wall: '#1e3352', wallEdge: '#0c1525', wallInner: '#3a2a1a', wallInnerEdge: '#1a1208',
   doorOpen: '#4a6040', doorClosed: '#2a3530',
   threat: '#cc4433', threatDead: '#3a3a44', threatGlow: 'rgba(200,60,50,0.2)',
-  opColors: ['#5588cc','#cc7744','#55aa66','#aa55aa','#ccaa44','#55aaaa'],
+  opColors: ['#5588cc','#cc7744','#55aa66','#aa55aa','#ccaa44','#55aaaa','#cc5577'],
   opBody: '#c8bb96', opBodyGrey: '#666', opOutline: '#0c1525',
   fov: (c: string) => c + '15', fovEdge: (c: string) => c + '35',
   pathAlpha: 0.65, pathGrey: 0.12, node: '#e8dfc6', nodeSelected: '#f2ecda',

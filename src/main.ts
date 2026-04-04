@@ -5,11 +5,11 @@ import { C, OP_R, NODE_R, DEPLOY_PANEL_H, DEPLOY_OP_SPACING, GRID, DOOR_W, WALL_
 import { startGameLoop } from './core/gameLoop';
 import { initInput, getInput, clearFrameInput } from './core/inputManager';
 import { ROOM_TEMPLATES, type RoomTemplateName, STAMP_TEMPLATES, STAMP_NAMES, type StampName } from './room/templates';
-import { createOperator, createDeployedOperator, resetOperatorId, resetOperator } from './operator/operator';
+import { createOperator, resetOperatorId, resetOperator } from './operator/operator';
 import { rebuildPathLUT } from './operator/pathFollower';
 import { distance, copy, distToSegment, closestPointOnSegment } from './math/vec2';
 import { updateSimulation, resetSimulation, startExecution } from './core/simulation';
-import { renderGame } from './rendering/renderer';
+import { renderGame, resetSharePanelAnim } from './rendering/renderer';
 import { exportGIF, downloadBlob } from './export/gifExporter';
 import { cornerFedRoom } from './room/templates';
 import { makeWall, makeThreat, createEmptyRoom } from './room/room';
@@ -35,12 +35,23 @@ app.innerHTML = `
       <div id="room-btns" class="menu-room-grid"></div>
     </div>
 
-    <div class="menu-section">
-      <label class="menu-label">Operators</label>
-      <div id="op-btns" class="menu-op-row"></div>
+    <button id="btn-start" class="menu-start-btn">START MISSION</button>
+
+    <div class="menu-code-section">
+      <div class="menu-code-header">
+        <label class="menu-label">Enter Room Code</label>
+      </div>
+      <div class="menu-code-row">
+        <input id="menu-code-input" class="menu-code-input" type="text" placeholder="Paste room code here..." spellcheck="false" autocomplete="off" />
+        <button id="btn-load-code" class="menu-code-btn">LOAD</button>
+      </div>
+      <p id="menu-code-error" class="menu-code-error"></p>
     </div>
 
-    <button id="btn-start" class="menu-start-btn">START MISSION</button>
+    <div id="custom-maps-section" class="menu-section" style="display:none">
+      <label class="menu-label">Your Custom Maps</label>
+      <div id="custom-map-btns" class="menu-room-grid"></div>
+    </div>
 
     <div class="menu-footer">
       <div class="menu-footer-row">
@@ -95,10 +106,6 @@ app.innerHTML = `
       </div>
       <div class="build-divider"></div>
       <div class="build-tools-section">
-        <label class="menu-label">OPERATORS</label>
-        <div id="build-op-btns" class="menu-op-row"></div>
-      </div>
-      <div class="build-tools-section">
         <label class="menu-label">ACTIONS</label>
         <div class="build-actions-row">
           <button id="build-undo" class="build-action-btn">Undo</button>
@@ -113,8 +120,20 @@ app.innerHTML = `
           <button id="build-import" class="build-action-btn">Load Code</button>
         </div>
       </div>
-      <button id="build-play" class="menu-start-btn build-play-btn">PLAY THIS ROOM</button>
+      <button id="build-save" class="menu-start-btn build-play-btn">SAVE THIS MAP</button>
       <button id="build-back" class="menu-link-btn" style="width:100%;justify-content:center;">Back to Menu</button>
+    </div>
+  </div>
+</div>
+
+<div id="save-modal" class="save-modal-overlay" style="display:none">
+  <div class="save-modal">
+    <h3 class="save-modal-title">Save Map</h3>
+    <label class="menu-label" style="width:100%">MAP NAME</label>
+    <input id="save-name-input" class="save-name-input" type="text" placeholder="Enter map name..." maxlength="32" autocomplete="off" />
+    <div class="save-modal-btns">
+      <button id="save-cancel" class="menu-link-btn">Cancel</button>
+      <button id="save-confirm" class="menu-start-btn" style="flex:1;">SAVE</button>
     </div>
   </div>
 </div>
@@ -149,8 +168,7 @@ window.addEventListener('resize', () => { sizeCanvas(); sizeBuildCanvas(); });
 
 // ---- State ----
 let selRoom: RoomTemplateName = 'Corner Fed';
-let selOpCount = 2;
-let buildOpCount = 2;
+let selOpCount = 7;
 
 const state: GameState = {
   screen: 'menu', mode: 'planning',
@@ -185,6 +203,7 @@ let buildMouseDown = false;
 let buildHoveredWall = -1;
 let buildHistory: string[] = [];
 let buildAnimT = 0;
+let buildLastTime = performance.now();
 
 // Build camera
 let buildCam = { x: 400, y: 300, zoom: 1 };
@@ -213,6 +232,180 @@ function undoHistory() {
   customRoom.walls = d.w; customRoom.threats = d.t;
   customRoom.entryPoints = d.e; customRoom.floor = d.f;
 }
+
+// ---- Saved Maps (localStorage) ----
+interface SavedMap {
+  name: string;
+  data: {
+    w: number[][];
+    t: number[][];
+    e: number[][];
+    f: number[][];
+  };
+  createdAt: number;
+}
+
+const SAVED_MAPS_KEY = 'flowkickers_saved_maps';
+
+function loadSavedMaps(): SavedMap[] {
+  try {
+    const raw = localStorage.getItem(SAVED_MAPS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveMapsToStorage(maps: SavedMap[]) {
+  localStorage.setItem(SAVED_MAPS_KEY, JSON.stringify(maps));
+}
+
+function saveCurrentMap(name: string) {
+  const maps = loadSavedMaps();
+  const mapData: SavedMap = {
+    name,
+    data: {
+      w: customRoom.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.hasDoor ? (w.doorOpen ? 1 : 2) : 0, w.doorPos]),
+      t: customRoom.threats.map(t => [t.position.x, t.position.y]),
+      e: customRoom.entryPoints.map(e => [e.x, e.y]),
+      f: customRoom.floor.map(p => [p.x, p.y]),
+    },
+    createdAt: Date.now(),
+  };
+  maps.push(mapData);
+  saveMapsToStorage(maps);
+  refreshCustomMapsUI();
+}
+
+function deleteSavedMap(index: number) {
+  const maps = loadSavedMaps();
+  maps.splice(index, 1);
+  saveMapsToStorage(maps);
+  refreshCustomMapsUI();
+}
+
+function roomFromSavedMap(mapData: SavedMap['data']): Room {
+  return {
+    name: 'Custom',
+    walls: (mapData.w || []).map((w: number[]) => {
+      const wall = makeWall(w[0], w[1], w[2], w[3], w[4] > 0, w[5] ?? 0.5);
+      if (w[4] === 1) wall.doorOpen = true;
+      return wall;
+    }),
+    threats: (mapData.t || []).map((t: number[]) => makeThreat(t[0], t[1])),
+    entryPoints: (mapData.e || []).map((e: number[]) => ({ x: e[0], y: e[1] })),
+    floor: (mapData.f || []).map((p: number[]) => ({ x: p[0], y: p[1] })),
+  };
+}
+
+function startSavedMapMission(mapData: SavedMap['data']) {
+  state.room = roomFromSavedMap(mapData);
+  state.room.floor = computeFloorCells(state.room.walls);
+  for (const w of state.room.walls) if (w.hasDoor) w.doorOpen = true;
+  state.operators = [];
+  state.selectedOpId = null;
+  state.mode = 'planning';
+  state.elapsedTime = 0;
+  state.roomCleared = false;
+  state.goCodesTriggered = { A: false, B: false, C: false };
+  state.interaction = { type: 'idle' };
+  state.popup = null;
+  state.radialMenu = null;
+  state.pendingNode = null;
+  state.speedSlider = null;
+  state.stages = [];
+  state.currentStageIndex = 0;
+  state.executingStageIndex = -1;
+  state.isReplaying = false;
+  resetOperatorId();
+  for (let i = 0; i < selOpCount; i++) {
+    state.operators.push(createOperator(i));
+  }
+  // Center camera on room
+  if (state.room.walls.length > 0) {
+    let cx = 0, cy = 0, count = 0;
+    for (const w of state.room.walls) { cx += w.a.x + w.b.x; cy += w.a.y + w.b.y; count += 2; }
+    cx /= count; cy /= count;
+    state.camera = { x: cx, y: cy, zoom: 1 };
+  } else {
+    state.camera = { x: 500, y: 350, zoom: 1 };
+  }
+  show('game');
+}
+
+function refreshCustomMapsUI() {
+  const maps = loadSavedMaps();
+  const container = document.getElementById('custom-map-btns')!;
+  const section = document.getElementById('custom-maps-section')!;
+  container.innerHTML = '';
+
+  if (maps.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  section.style.display = '';
+  for (let i = 0; i < maps.length; i++) {
+    const map = maps[i];
+    const card = document.createElement('div');
+    card.className = 'room-card custom-map-card';
+    card.innerHTML = `
+      <div class="room-card-preview"><svg viewBox="0 0 60 48"><rect x="8" y="6" width="44" height="34" fill="none" stroke="var(--cream)" stroke-width="1.5" opacity=".35"/><text x="30" y="28" text-anchor="middle" fill="var(--cream)" font-size="10" opacity=".4" font-family="var(--mono)">MAP</text></svg></div>
+      <span class="room-card-name">${map.name}</span>
+      <button class="custom-map-delete" title="Delete map">&times;</button>
+    `;
+    const playBtn = card;
+    playBtn.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).classList.contains('custom-map-delete')) return;
+      startSavedMapMission(map.data);
+    });
+    card.querySelector('.custom-map-delete')!.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (confirm(`Delete "${map.name}"?`)) {
+        deleteSavedMap(i);
+      }
+    });
+    container.appendChild(card);
+  }
+}
+
+// Save modal logic
+function openSaveModal() {
+  if (customRoom.walls.length < 3) {
+    alert('Add some walls before saving!');
+    return;
+  }
+  const modal = document.getElementById('save-modal')!;
+  const input = document.getElementById('save-name-input') as HTMLInputElement;
+  modal.style.display = 'flex';
+  input.value = '';
+  input.focus();
+}
+
+function closeSaveModal() {
+  document.getElementById('save-modal')!.style.display = 'none';
+}
+
+function confirmSave() {
+  const input = document.getElementById('save-name-input') as HTMLInputElement;
+  const name = input.value.trim();
+  if (!name) {
+    input.classList.add('shake');
+    setTimeout(() => input.classList.remove('shake'), 400);
+    return;
+  }
+  saveCurrentMap(name);
+  closeSaveModal();
+  show('menu');
+}
+
+document.getElementById('save-cancel')!.onclick = closeSaveModal;
+document.getElementById('save-confirm')!.onclick = confirmSave;
+document.getElementById('save-name-input')!.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') confirmSave();
+  if (e.key === 'Escape') closeSaveModal();
+});
+
+// Initialize custom maps UI on load
+refreshCustomMapsUI();
 
 function snapGrid(v: number) { return Math.round(v / GRID) * GRID; }
 function snapVec(p: Vec2): Vec2 { return { x: snapGrid(p.x), y: snapGrid(p.y) }; }
@@ -361,37 +554,41 @@ for (const name of Object.keys(ROOM_TEMPLATES)) {
   b.onclick = () => { selRoom = name as RoomTemplateName; roomBtns.querySelectorAll('.room-card').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); };
   roomBtns.appendChild(b);
 }
-const opBtns = document.getElementById('op-btns')!;
-for (let i = 1; i <= 6; i++) {
-  const b = document.createElement('button');
-  b.className = 'op-btn';
-  b.textContent = String(i);
-  if (i === selOpCount) b.classList.add('sel');
-  b.onclick = () => { selOpCount = i; opBtns.querySelectorAll('.op-btn').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); };
-  opBtns.appendChild(b);
-}
+// Operator count is always 7 - no selector needed
 
-// Build operator selector
-const buildOpBtns = document.getElementById('build-op-btns')!;
-for (let i = 1; i <= 6; i++) {
-  const b = document.createElement('button');
-  b.className = 'op-btn';
-  b.textContent = String(i);
-  if (i === buildOpCount) b.classList.add('sel');
-  b.onclick = () => { buildOpCount = i; buildOpBtns.querySelectorAll('.op-btn').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); };
-  buildOpBtns.appendChild(b);
-}
+// Operator count is always 7 for build screen too - no selector needed
 
 document.getElementById('btn-start')!.onclick = startMission;
 document.getElementById('btn-tut')!.onclick = () => show('tut');
 document.getElementById('btn-tut-back')!.onclick = () => show('menu');
+
+// Load room from code input on menu
+document.getElementById('btn-load-code')!.onclick = () => {
+  const input = document.getElementById('menu-code-input') as HTMLInputElement;
+  const errorEl = document.getElementById('menu-code-error')!;
+  const code = input.value.trim();
+  errorEl.textContent = '';
+  if (!code) { errorEl.textContent = 'Paste a room code first'; return; }
+  try {
+    const d = JSON.parse(code);
+    if (!d.w || !Array.isArray(d.w)) throw new Error('Missing wall data');
+    startSavedMapMission(d);
+    input.value = '';
+  } catch {
+    errorEl.textContent = 'Invalid room code';
+  }
+};
+// Also allow Enter key in the code input
+document.getElementById('menu-code-input')!.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('btn-load-code')!.click();
+});
 document.getElementById('btn-build')!.onclick = () => {
   customRoom = createEmptyRoom();
   buildHistory = [];
   show('build');
 };
 document.getElementById('build-back')!.onclick = () => show('menu');
-document.getElementById('build-play')!.onclick = startCustomMission;
+document.getElementById('build-save')!.onclick = openSaveModal;
 document.getElementById('build-undo')!.onclick = undoHistory;
 document.getElementById('build-clear')!.onclick = () => { pushHistory(); customRoom = createEmptyRoom(); };
 
@@ -455,16 +652,46 @@ document.getElementById('build-import')!.onclick = () => {
 };
 
 function show(s: 'menu' | 'tut' | 'build' | 'game') {
-  document.getElementById('menu-screen')!.style.display = s === 'menu' ? 'flex' : 'none';
-  document.getElementById('tut-screen')!.style.display = s === 'tut' ? 'flex' : 'none';
-  document.getElementById('build-screen')!.style.display = s === 'build' ? 'flex' : 'none';
-  document.getElementById('game-screen')!.style.display = s === 'game' ? 'flex' : 'none';
+  const screens = {
+    menu: document.getElementById('menu-screen')!,
+    tut: document.getElementById('tut-screen')!,
+    build: document.getElementById('build-screen')!,
+    game: document.getElementById('game-screen')!,
+  };
+
+  // For each screen: if it's the target, make sure it's visible first then fade in
+  // If it's not the target, fade out then hide
+  for (const [key, el] of Object.entries(screens)) {
+    if (key === s) {
+      // Show this screen
+      el.style.display = key === 'build' ? 'flex' : (key === 'game' ? 'flex' : 'flex');
+      // Force reflow before removing hidden class for transition
+      el.offsetHeight;
+      el.classList.remove('screen-hidden');
+      el.style.opacity = '1';
+      el.style.transform = 'none';
+    } else {
+      // Hide this screen instantly (no lingering)
+      el.style.display = 'none';
+      el.classList.add('screen-hidden');
+    }
+  }
+
   state.screen = s === 'game' ? 'game' : 'menu';
   if (s === 'game') {
     requestAnimationFrame(() => sizeCanvas());
   }
   if (s === 'build') {
     requestAnimationFrame(() => sizeBuildCanvas());
+  }
+  // Re-trigger entrance animation for menu-content when coming back to menu
+  if (s === 'menu' || s === 'tut') {
+    const content = screens[s].querySelector('.menu-content');
+    if (content) {
+      content.classList.remove('animate-enter');
+      void (content as HTMLElement).offsetHeight;
+      content.classList.add('animate-enter');
+    }
   }
 }
 
@@ -503,43 +730,7 @@ function startMission() {
   show('game');
 }
 
-function startCustomMission() {
-  state.room = JSON.parse(JSON.stringify(customRoom)) as Room;
-  state.room.floor = computeFloorCells(state.room.walls);
-  for (const w of state.room.walls) if (w.hasDoor && w.doorOpen) w.doorOpen = true;
-  state.operators = [];
-  state.selectedOpId = null;
-  state.mode = 'planning';
-  state.elapsedTime = 0;
-  state.roomCleared = false;
-  state.goCodesTriggered = { A: false, B: false, C: false };
-  state.interaction = { type: 'idle' };
-  state.popup = null;
-  state.radialMenu = null;
-  state.pendingNode = null;
-  state.speedSlider = null;
-  resetOperatorId();
-  const entries = state.room.entryPoints;
-  for (let i = 0; i < buildOpCount; i++) {
-    let pos = { x: 500, y: 550 };
-    if (i < entries.length) pos = { x: entries[i].x, y: entries[i].y };
-    else if (entries.length > 0) {
-      const base = entries[entries.length - 1];
-      pos = { x: base.x + (i - entries.length + 1) * 35, y: base.y };
-    }
-    state.operators.push(createDeployedOperator(pos, i));
-  }
-  // Center camera on room
-  if (state.room.floor.length > 0) {
-    let cx = 0, cy = 0;
-    for (const p of state.room.floor) { cx += p.x; cy += p.y; }
-    cx /= state.room.floor.length; cy /= state.room.floor.length;
-    state.camera = { x: cx, y: cy, zoom: 1 };
-  } else {
-    state.camera = { x: 500, y: 350, zoom: 1 };
-  }
-  show('game');
-}
+// startCustomMission removed - saved maps now launch through menu via startSavedMapMission
 
 // ---- Keyboard ----
 window.addEventListener('keydown', (e) => {
@@ -785,6 +976,8 @@ function openSharePanel() {
   state.sharePanel = { open: true, exporting: false, exportProgress: 0, gifBlob: null, copiedRoomCode: false };
   state.hoveredShareBtn = null;
   if (state.mode === 'executing') state.mode = 'paused';
+  // Reset share panel animation (renderer reads this)
+  resetSharePanelAnim();
 }
 
 function closeSharePanel() {
@@ -1598,7 +1791,10 @@ function renderFrame() {
 function renderBuild() {
   const ctx = buildCv.getContext('2d')!;
   const W = buildCv.width, H = buildCv.height;
-  buildAnimT += 0.016;
+  const now = performance.now();
+  const buildDt = Math.min((now - buildLastTime) / 1000, 0.05);
+  buildLastTime = now;
+  buildAnimT += buildDt;
 
   // Background
   ctx.fillStyle = '#080e12';
