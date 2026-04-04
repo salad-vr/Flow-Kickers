@@ -337,46 +337,49 @@ function drawPieTarget(ctx: CanvasRenderingContext2D, op: Operator, grey: boolea
   ctx.setLineDash([]);
   ctx.globalAlpha = grey ? 0.2 : 1;
 
-  // Pizza icon at target position
-  const r = 8;
-  // Outer circle (crust)
+  // Pizza SLICE icon at target position
+  const r = 10;
+  const sliceAngle = Math.PI * 0.45; // width of the slice wedge
+  const sliceDir = -Math.PI / 2; // point upward
+
+  // Crust arc (outer edge)
   ctx.fillStyle = '#d4a24a';
   ctx.beginPath();
-  ctx.arc(pie.x, pie.y, r, 0, Math.PI * 2);
+  ctx.moveTo(pie.x, pie.y);
+  ctx.arc(pie.x, pie.y, r, sliceDir - sliceAngle / 2, sliceDir + sliceAngle / 2);
+  ctx.closePath();
   ctx.fill();
-  // Inner circle (cheese)
+
+  // Cheese fill (inner wedge, slightly smaller)
   ctx.fillStyle = '#e8c84a';
   ctx.beginPath();
-  ctx.arc(pie.x, pie.y, r * 0.75, 0, Math.PI * 2);
+  ctx.moveTo(pie.x, pie.y);
+  ctx.arc(pie.x, pie.y, r * 0.82, sliceDir - sliceAngle / 2 + 0.08, sliceDir + sliceAngle / 2 - 0.08);
+  ctx.closePath();
   ctx.fill();
-  // Slice lines
+
+  // Crust outline
   ctx.strokeStyle = '#b8842a';
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 1.2;
   ctx.beginPath();
   ctx.moveTo(pie.x, pie.y);
-  ctx.lineTo(pie.x + r * Math.cos(0), pie.y + r * Math.sin(0));
-  ctx.moveTo(pie.x, pie.y);
-  ctx.lineTo(pie.x + r * Math.cos(Math.PI * 0.667), pie.y + r * Math.sin(Math.PI * 0.667));
-  ctx.moveTo(pie.x, pie.y);
-  ctx.lineTo(pie.x + r * Math.cos(Math.PI * 1.333), pie.y + r * Math.sin(Math.PI * 1.333));
+  ctx.arc(pie.x, pie.y, r, sliceDir - sliceAngle / 2, sliceDir + sliceAngle / 2);
+  ctx.closePath();
   ctx.stroke();
+
   // Pepperoni dots
   ctx.fillStyle = '#cc4433';
-  const dots = [
-    { x: pie.x + 3, y: pie.y - 2 },
-    { x: pie.x - 2, y: pie.y + 3 },
-    { x: pie.x - 3, y: pie.y - 3 },
-  ];
-  for (const d of dots) {
-    ctx.beginPath();
-    ctx.arc(d.x, d.y, 1.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // Border ring
+  const pd = r * 0.5;
+  const pepX = pie.x + Math.cos(sliceDir) * pd;
+  const pepY = pie.y + Math.sin(sliceDir) * pd;
+  ctx.beginPath(); ctx.arc(pepX - 1.5, pepY + 1, 1.5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(pepX + 2, pepY - 0.5, 1.2, 0, Math.PI * 2); ctx.fill();
+
+  // Colored border ring for visibility
   ctx.strokeStyle = grey ? '#555' : op.color;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.arc(pie.x, pie.y, r + 1, 0, Math.PI * 2);
+  ctx.arc(pie.x, pie.y, r + 2, 0, Math.PI * 2);
   ctx.stroke();
 
   ctx.restore();
@@ -501,20 +504,35 @@ function drawRadialIcon(ctx: CanvasRenderingContext2D, cx: number, cy: number, i
     ctx.moveTo(1, -3); ctx.lineTo(4, 0); ctx.lineTo(1, 3);
     ctx.stroke();
   } else if (icon === 'pie') {
-    // Pizza slice triangle
+    // Pizza slice wedge (proper slice shape)
+    const sr = 6;
+    const sa = Math.PI * 0.45;
+    const sd = -Math.PI / 2; // point up
+    // Crust
+    ctx.fillStyle = hovered ? '#d4a24a' : '#b8923a';
     ctx.beginPath();
-    ctx.moveTo(0, -4);
-    ctx.lineTo(-4, 4);
-    ctx.lineTo(4, 4);
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, sr, sd - sa / 2, sd + sa / 2);
     ctx.closePath();
-    ctx.fillStyle = hovered ? '#e8c84a' : '#c8a83a';
     ctx.fill();
+    // Cheese
+    ctx.fillStyle = hovered ? '#e8c84a' : '#c8a83a';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, sr * 0.8, sd - sa / 2 + 0.1, sd + sa / 2 - 0.1);
+    ctx.closePath();
+    ctx.fill();
+    // Outline
     ctx.strokeStyle = hovered ? '#d4a24a' : '#a0822a';
     ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, sr, sd - sa / 2, sd + sa / 2);
+    ctx.closePath();
     ctx.stroke();
     // Pepperoni dot
     ctx.fillStyle = '#cc4433';
-    ctx.beginPath(); ctx.arc(0, 1, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(Math.cos(sd) * sr * 0.45, Math.sin(sd) * sr * 0.45, 1.3, 0, Math.PI * 2); ctx.fill();
   } else if (icon === 'route') {
     // Plus sign
     ctx.beginPath();

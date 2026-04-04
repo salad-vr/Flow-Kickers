@@ -1418,6 +1418,24 @@ function handleInput() {
       const hudBarY = canvas.height - 36;
       const deployBarY = hudBarY - DEPLOY_PANEL_H - 4;
       if (input.mousePos.y > deployBarY) { state.interaction = { type: 'idle' }; state.pendingNode = null; return; }
+      // Check if clicking on a different operator - swap selection instead of placing node
+      for (const otherOp of state.operators) {
+        if (!otherOp.deployed || otherOp.id === op.id) continue;
+        if (distance(worldMouse, otherOp.position) < OP_R + 8) {
+          state.selectedOpId = otherOp.id;
+          state.interaction = { type: 'idle' };
+          state.pendingNode = null;
+          state.radialMenu = null;
+          return;
+        }
+      }
+      // Check if clicking on the current operator itself - open radial menu
+      if (distance(worldMouse, op.position) < OP_R + 8) {
+        state.interaction = { type: 'idle' };
+        state.pendingNode = null;
+        state.radialMenu = { center: copy(op.position), opId: op.id, wpIdx: -1, hoveredIdx: -1, animT: 0 };
+        return;
+      }
       op.path.waypoints.push(makeWaypoint(worldMouse));
       rebuildPathLUT(op);
       // Set this as pending node needing confirm/cancel
@@ -1626,16 +1644,12 @@ function handleInput() {
           // Already selected - start drag (will open radial menu on short click via release handler)
           state.interaction = { type: 'moving_op', opId: op.id };
         } else {
-          // First click: select + auto enter route draw mode
+          // Swap to this operator - just select it (show glow ring)
           state.selectedOpId = op.id;
           state.popup = null;
           state.radialMenu = null;
-          // Auto-enter route draw mode
-          if (op.path.waypoints.length === 0) {
-            op.path.waypoints = [makeWaypoint(op.position)];
-            op.path.splineLUT = null;
-          }
-          state.interaction = { type: 'placing_waypoints', opId: op.id };
+          state.pendingNode = null;
+          state.interaction = { type: 'idle' };
         }
         return;
       }
