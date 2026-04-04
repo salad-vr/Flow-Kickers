@@ -492,13 +492,15 @@ button:focus-visible,
   gap: 20px;
   width: 520px;
   max-width: 95vw;
+  overflow: hidden;
   animation: cardIn 0.5s ease-out both;
 }
 
-/* Slide track */
+/* Slide track — horizontal strip that translateX slides through */
 .tut-slides {
   display: flex;
   width: 100%;
+  flex-shrink: 0;
   transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   will-change: transform;
 }
@@ -506,27 +508,32 @@ button:focus-visible,
 /* Individual slide */
 .tut-slide {
   min-width: 100%;
+  width: 100%;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 20px;
   padding: 0 10px;
+  box-sizing: border-box;
 }
 
-/* Animated SVG visual area */
+/* SVG visual area */
 .tut-visual {
   width: 100%;
-  max-width: 420px;
+  max-width: 440px;
+  aspect-ratio: 280 / 160;
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 8px 32px rgba(0,0,0,0.35);
   border: 1px solid var(--navy-600);
+  background: #0c1525;
 }
 
 .tut-svg {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
 }
 
 /* Text area below visual */
