@@ -1,6 +1,6 @@
-import type { GameState, Operator, Room, WallSegment, ThreatMarker, NodePopup, Camera, HudBtn, SharePanelBtn, SpeedSliderState, RadialMenu, RadialMenuItem } from '../types';
+import type { GameState, Operator, Room, WallSegment, ThreatMarker, NodePopup, Camera, HudBtn, SharePanelBtn, SpeedSliderState, RadialMenu, RadialMenuItem, FloorLayer } from '../types';
 import { WALL_W, OP_R, THREAT_R, GRID, DOOR_W, C, NODE_R, DEPLOY_PANEL_H, DEPLOY_OP_SPACING } from '../types';
-import { getWallsForCollision } from '../room/room';
+import { getWallsForCollision, getFloorData, getMaxFloorLevel } from '../room/room';
 import { computeOperatorFOV } from '../operator/visibility';
 import type { Vec2 } from '../math/vec2';
 import type { Wall } from '../math/intersection';
@@ -17,9 +17,11 @@ function worldToScreen(p: Vec2, cam: Camera, W: number, H: number): Vec2 {
 export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
   const ctx = canvas.getContext('2d')!;
   const W = canvas.width, H = canvas.height;
-  const walls = getWallsForCollision(state.room);
+  const activeFloor = state.activeFloor;
+  const walls = getWallsForCollision(state.room, activeFloor);
   const cam = state.camera;
   const exporting = state.exportingGif;
+  const maxFloor = getMaxFloorLevel(state.room);
 
   // During GIF export: no selection (prevents grey-out), no planning overlays
   const sid = exporting ? null : state.selectedOpId;
@@ -34,8 +36,29 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
   ctx.scale(cam.zoom, cam.zoom);
   ctx.translate(-cam.x, -cam.y);
 
+  // ---- Render inactive floors as ghosts ----
+  const allLevels = [0, ...(state.room.floors || []).map((f: FloorLayer) => f.level)];
+  for (const level of allLevels) {
+    if (level === activeFloor) continue;
+    const fd = getFloorData(state.room, level);
+    if (fd.floor.length === 0 && fd.walls.length === 0) continue;
+    ctx.save();
+    ctx.globalAlpha = level < activeFloor ? 0.15 : 0.1;
+    ctx.fillStyle = level < activeFloor ? '#8a8070' : '#7090a0';
+    for (const cell of fd.floor) ctx.fillRect(cell.x, cell.y, GRID, GRID);
+    for (const w of fd.walls) drawWall(ctx, w);
+    for (const obj of fd.objects) {
+      ctx.fillStyle = 'rgba(80,80,80,0.4)';
+      ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+    }
+    ctx.restore();
+  }
+
+  // ---- Active floor data ----
+  const afd = getFloorData(state.room, activeFloor);
+
   // Floor cells (inset slightly so they don't bleed past walls)
-  const fl = state.room.floor;
+  const fl = afd.floor;
   const floorSet = new Set(fl.map(c => `${c.x},${c.y}`));
   if (fl.length > 0) {
     ctx.fillStyle = C.floor;
@@ -68,8 +91,8 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
     for (let y = gy0; y <= viewBottom; y += gridStep) { ctx.beginPath(); ctx.moveTo(viewLeft, y); ctx.lineTo(viewRight, y); ctx.stroke(); }
   }
 
-  // Room objects (blocks/stairs)
-  for (const obj of state.room.objects || []) {
+  // Room objects (blocks/stairs) on active floor
+  for (const obj of afd.objects || []) {
     if (obj.type === 'block') {
       ctx.fillStyle = 'rgba(80,70,55,0.7)';
       ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
@@ -77,10 +100,11 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
       ctx.lineWidth = 1.5;
       ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
     } else if (obj.type === 'stairs') {
-      ctx.fillStyle = 'rgba(55,60,70,0.6)';
+      const connected = obj.connectsFloors != null;
+      ctx.fillStyle = connected ? 'rgba(55,80,100,0.6)' : 'rgba(55,60,70,0.6)';
       ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
-      ctx.strokeStyle = 'rgba(80,85,95,0.7)';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = connected ? 'rgba(100,160,200,0.7)' : 'rgba(80,85,95,0.7)';
+      ctx.lineWidth = connected ? 1.5 : 1;
       ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
       const steps = Math.max(2, Math.round(Math.min(obj.w, obj.h) / 10));
       const isWide = obj.w > obj.h;
@@ -95,6 +119,16 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
           ctx.beginPath(); ctx.moveTo(obj.x, ly); ctx.lineTo(obj.x + obj.w, ly); ctx.stroke();
         }
       }
+      // Stair connection label
+      if (connected) {
+        const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2;
+        ctx.fillStyle = 'rgba(100,180,220,0.8)'; ctx.font = `bold ${Math.min(12, obj.w / 4)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const destFloor = obj.connectsFloors![0] === activeFloor ? obj.connectsFloors![1] : obj.connectsFloors![0];
+        const arrow = destFloor > activeFloor ? '\u2191' : '\u2193';
+        ctx.fillText(`${arrow} F${destFloor + 1}`, cx, cy);
+        ctx.textBaseline = 'alphabetic';
+      }
     }
   }
 
@@ -108,18 +142,18 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
     }
     ctx.clip();
     for (const op of state.operators) {
-      if (!op.deployed) continue;
+      if (!op.deployed || op.currentFloor !== activeFloor) continue;
       const grey = sid !== null && op.id !== sid;
       drawFOV(ctx, op, walls, grey, isExecMode);
     }
     ctx.restore();
   }
 
-  // Threats
-  for (const t of state.room.threats) drawThreat(ctx, t);
+  // Threats on active floor
+  for (const t of afd.threats) drawThreat(ctx, t);
 
-  // Walls
-  for (const w of state.room.walls) drawWall(ctx, w);
+  // Walls on active floor
+  for (const w of afd.walls) drawWall(ctx, w);
 
   // Paths, waypoints, pie targets — skip entirely during GIF export (planning artifacts)
   if (!exporting) {
@@ -155,15 +189,22 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
   const isExec = state.mode === 'executing' || state.mode === 'paused';
   for (const op of state.operators) {
     if (!op.deployed && op.id !== deployingOpId) continue;
-    const grey = sid !== null && op.id !== sid;
-    const isDragging = op.id === deployingOpId;
-    drawOp(ctx, op, op.id === sid || isDragging, grey, isDragging, isExec);
+    const onOtherFloor = op.currentFloor !== activeFloor && op.id !== deployingOpId;
+    if (onOtherFloor) {
+      ctx.save(); ctx.globalAlpha = 0.12;
+      drawOp(ctx, op, false, true, false, isExec);
+      ctx.restore();
+    } else {
+      const grey = sid !== null && op.id !== sid;
+      const isDragging = op.id === deployingOpId;
+      drawOp(ctx, op, op.id === sid || isDragging, grey, isDragging, isExec);
+    }
   }
 
   // Selection glow ring (world-space) — only in planning, never during export
   if (sid !== null && state.mode === 'planning') {
     const selOp = state.operators.find(o => o.id === sid && o.deployed);
-    if (selOp) drawSelectionGlow(ctx, selOp);
+    if (selOp && selOp.currentFloor === activeFloor) drawSelectionGlow(ctx, selOp);
   }
 
   // Radial menu (world-space) — only in planning, never during export
@@ -192,6 +233,32 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
 
   // Bottom HUD bar (screen space)
   drawHUD(ctx, state, W, H);
+
+  // Floor indicator pills (top-right, only if multi-floor)
+  if (maxFloor > 0) {
+    const pillW = 36, pillH = 22, gap = 4, margin = 10;
+    const totalW = (maxFloor + 1) * (pillW + gap) - gap;
+    const startX = W - margin - totalW;
+    const fy = margin;
+    ctx.fillStyle = 'rgba(12,21,37,0.85)';
+    ctx.beginPath(); ctx.roundRect(startX - 6, fy - 4, totalW + 12, pillH + 8, 6); ctx.fill();
+    ctx.strokeStyle = 'rgba(30,51,82,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(startX - 6, fy - 4, totalW + 12, pillH + 8, 6); ctx.stroke();
+    for (let level = 0; level <= maxFloor; level++) {
+      const px = startX + level * (pillW + gap);
+      const isActive = level === activeFloor;
+      const isHovered = state.hoveredHudBtn === `floor_${level}`;
+      ctx.fillStyle = isActive ? 'rgba(100,180,220,0.3)' : isHovered ? 'rgba(100,180,220,0.15)' : 'rgba(30,40,55,0.6)';
+      ctx.beginPath(); ctx.roundRect(px, fy, pillW, pillH, 4); ctx.fill();
+      ctx.strokeStyle = isActive ? 'rgba(100,180,220,0.7)' : 'rgba(60,70,90,0.5)';
+      ctx.lineWidth = isActive ? 1.5 : 0.5;
+      ctx.beginPath(); ctx.roundRect(px, fy, pillW, pillH, 4); ctx.stroke();
+      ctx.fillStyle = isActive ? '#64b4dc' : C.hudText;
+      ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(`F${level + 1}`, px + pillW / 2, fy + pillH / 2);
+    }
+    ctx.textBaseline = 'alphabetic';
+  }
 
   // Popup (screen space - but positioned relative to world object)
   if (state.popup) {

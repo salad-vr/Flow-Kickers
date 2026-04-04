@@ -16,6 +16,8 @@ export function createOperator(colorIndex: number): Operator {
     startPosition: { x: 0, y: 0 }, startAngle: 0,
     pieTarget: null,
     smoothPosition: { x: 0, y: 0 },
+    currentFloor: 0,
+    startFloor: 0,
   };
 }
 
@@ -23,6 +25,7 @@ export function resetOperator(op: Operator) {
   op.position = { x: op.startPosition.x, y: op.startPosition.y };
   op.smoothPosition = { x: op.startPosition.x, y: op.startPosition.y };
   op.angle = op.startAngle;
+  op.currentFloor = op.startFloor;
   op.distanceTraveled = 0; op.currentWaypointIndex = 0;
   op.isHolding = false; op.isMoving = false; op.reachedEnd = false;
 }

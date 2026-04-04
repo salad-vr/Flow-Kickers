@@ -12,7 +12,7 @@ import { updateSimulation, resetSimulation, startExecution } from './core/simula
 import { renderGame, resetSharePanelAnim, SHARE_BTN, getShareBtnX } from './rendering/renderer';
 import { exportGIF, downloadBlob } from './export/gifExporter';
 import { cornerFedRoom } from './room/templates';
-import { makeWall, makeThreat, createEmptyRoom } from './room/room';
+import { makeWall, makeThreat, createEmptyRoom, getStairAtPoint, getStairDestFloor } from './room/room';
 import { encodeRoomCode, decodeRoomCode } from './room/roomCode';
 import { initMusic, toggleMute, isMuted } from './audio/musicPlayer';
 import { sfxClick, sfxSelect, sfxConfirm, sfxBack, sfxTick, sfxDelete } from './audio/sfx';
@@ -396,6 +396,13 @@ app.innerHTML = `
         </div>
       </div>
       <div class="build-tools-section">
+        <label class="menu-label">FLOORS</label>
+        <div class="build-floor-tabs" id="build-floor-tabs"></div>
+        <div class="build-tools-grid">
+          <button class="build-tool" data-tool="addfloor"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="8" width="14" height="9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/><line x1="10" y1="2" x2="10" y2="8" stroke="currentColor" stroke-width="1.5"/><polyline points="7,5 10,2 13,5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></div><span>Add Floor</span><kbd>9</kbd></button>
+        </div>
+      </div>
+      <div class="build-tools-section">
         <label class="menu-label">ROOM STAMPS</label>
         <div class="build-stamps-grid" id="build-stamps"></div>
       </div>
@@ -511,11 +518,12 @@ const state: GameState = {
   stageJustCompleted: false,
   preGoSnapshot: null,
   viewingStageIndex: -1,
+  activeFloor: 0,
 };
 
 // ---- Build state ----
 let customRoom: Room = createEmptyRoom();
-type BuildToolType = 'line' | 'square' | 'delete' | 'door' | 'threat' | 'object' | 'stairs' | 'eraser' | 'room';
+type BuildToolType = 'line' | 'square' | 'delete' | 'door' | 'threat' | 'object' | 'stairs' | 'eraser' | 'room' | 'addfloor';
 let buildTool: BuildToolType = 'line';
 let buildSelectedStamp: StampName = 'Simple Box';
 let buildDragStart: Vec2 | null = null;
@@ -527,6 +535,68 @@ let buildHoveredObject = -1;
 let buildHistory: string[] = [];
 let buildAnimT = 0;
 let buildLastTime = performance.now();
+/** Currently active floor level in build mode (0 = ground) */
+let buildActiveFloor = 0;
+
+/** Get the data arrays for the currently active build floor */
+function getBuildFloorData() {
+  if (buildActiveFloor === 0) {
+    return { walls: customRoom.walls, threats: customRoom.threats, objects: customRoom.objects, floor: customRoom.floor, floorCut: customRoom.floorCut };
+  }
+  let fl = customRoom.floors.find(f => f.level === buildActiveFloor);
+  if (!fl) {
+    // Create floor layer on the fly if somehow missing
+    fl = { level: buildActiveFloor, bounds: { x: 0, y: 0, w: 0, h: 0 }, walls: [], threats: [], objects: [], floor: [], floorCut: [] };
+    customRoom.floors.push(fl);
+  }
+  return { walls: fl.walls, threats: fl.threats, objects: fl.objects, floor: fl.floor, floorCut: fl.floorCut };
+}
+
+/** Refresh the floor tab UI in build sidebar */
+function refreshBuildFloorTabs() {
+  const container = document.getElementById('build-floor-tabs');
+  if (!container) return;
+  container.innerHTML = '';
+  const maxLevel = customRoom.floors.length > 0 ? Math.max(...customRoom.floors.map(f => f.level)) : 0;
+  for (let i = 0; i <= maxLevel; i++) {
+    const tab = document.createElement('button');
+    tab.className = 'build-floor-tab' + (i === buildActiveFloor ? ' active' : '');
+    tab.textContent = `F${i + 1}`;
+    tab.onclick = () => {
+      buildActiveFloor = i;
+      refreshBuildFloorTabs();
+    };
+    // Right-click to delete upper floors
+    if (i > 0) {
+      tab.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        if (confirm(`Delete floor F${i + 1}? This removes all walls, objects, and threats on that floor.`)) {
+          pushHistory();
+          customRoom.floors = customRoom.floors.filter(f => f.level !== i);
+          // Also remove stair connections to this floor
+          for (const obj of customRoom.objects) {
+            if (obj.type === 'stairs' && obj.connectsFloors) {
+              if (obj.connectsFloors[0] === i || obj.connectsFloors[1] === i) {
+                obj.connectsFloors = undefined;
+              }
+            }
+          }
+          if (buildActiveFloor >= i) buildActiveFloor = Math.max(0, buildActiveFloor - 1);
+          refreshBuildFloorTabs();
+        }
+      });
+    }
+    container.appendChild(tab);
+  }
+  // Always show at least F1 even if no upper floors
+  if (maxLevel === 0 && container.children.length === 0) {
+    const tab = document.createElement('button');
+    tab.className = 'build-floor-tab active';
+    tab.textContent = 'F1';
+    tab.onclick = () => { buildActiveFloor = 0; refreshBuildFloorTabs(); };
+    container.appendChild(tab);
+  }
+}
 
 // Build camera
 let buildCam = { x: 400, y: 300, zoom: 1 };
@@ -547,6 +617,7 @@ function pushHistory() {
     w: customRoom.walls, t: customRoom.threats,
     e: customRoom.entryPoints, f: customRoom.floor,
     o: customRoom.objects, fc: customRoom.floorCut,
+    floors: customRoom.floors,
   }));
   if (buildHistory.length > 50) buildHistory.shift();
 }
@@ -556,6 +627,8 @@ function undoHistory() {
   customRoom.walls = d.w; customRoom.threats = d.t;
   customRoom.entryPoints = d.e; customRoom.floor = d.f;
   customRoom.objects = d.o || []; customRoom.floorCut = d.fc || [];
+  customRoom.floors = d.floors || [];
+  refreshBuildFloorTabs();
 }
 
 // ---- Saved Maps (localStorage) ----
@@ -646,6 +719,7 @@ function roomFromSavedMap(mapData: SavedMap['data']): Room {
     floor: (mapData.f || []).map((p: number[]) => ({ x: p[0], y: p[1] })),
     objects: (mapData.o || []).map((o: any) => ({ x: o[0] ?? o.x, y: o[1] ?? o.y, w: o[2] ?? o.w, h: o[3] ?? o.h, type: o[4] ?? o.type ?? 'block' })),
     floorCut: (mapData.fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
+    floors: (mapData as any).floors || [],
   };
 }
 
@@ -654,10 +728,26 @@ function startSavedMapMission(mapData: SavedMap['data']) {
   state.room.floor = computeFloorCells(state.room.walls);
   // Apply floor cuts
   state.room.floor = state.room.floor.filter(c => !state.room.floorCut.some(fc => fc.x === c.x && fc.y === c.y));
+  if (!state.room.floors) state.room.floors = [];
+  // Recompute upper floor cells
+  for (const fl of state.room.floors) {
+    if (fl.walls.length >= 3) {
+      fl.floor = computeFloorCells(fl.walls).filter(c => !fl.floorCut.some(fc => fc.x === c.x && fc.y === c.y));
+    } else if (fl.bounds.w > 0 && fl.bounds.h > 0) {
+      const cells: Vec2[] = [];
+      for (let cx = fl.bounds.x; cx < fl.bounds.x + fl.bounds.w; cx += GRID) {
+        for (let cy = fl.bounds.y; cy < fl.bounds.y + fl.bounds.h; cy += GRID) {
+          if (!fl.floorCut.some(fc => fc.x === cx && fc.y === cy)) cells.push({ x: cx, y: cy });
+        }
+      }
+      fl.floor = cells;
+    }
+  }
   for (const w of state.room.walls) for (const d of w.doors) d.open = true;
   state.operators = [];
   state.selectedOpId = null;
   state.mode = 'planning';
+  state.activeFloor = 0;
   state.elapsedTime = 0;
   state.roomCleared = false;
   state.goCodesTriggered = { A: false, B: false, C: false };
@@ -879,6 +969,7 @@ function restoreSession(data: SerializedSession) {
     floor: (data.room.f || []).map((p: number[]) => ({ x: p[0], y: p[1] })),
     objects: ((data.room as any).o || []).map((o: any) => ({ x: o[0] ?? o.x, y: o[1] ?? o.y, w: o[2] ?? o.w, h: o[3] ?? o.h, type: o[4] ?? o.type ?? 'block' })),
     floorCut: ((data.room as any).fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
+    floors: (data.room as any).floors || [],
   };
   state.room = room;
 
@@ -910,6 +1001,8 @@ function restoreSession(data: SerializedSession) {
       startAngle: od.startAngle,
       pieTarget: od.pieTarget ? { x: od.pieTarget.x, y: od.pieTarget.y } : null,
       smoothPosition: { x: od.position.x, y: od.position.y },
+      currentFloor: (od as any).currentFloor ?? 0,
+      startFloor: (od as any).startFloor ?? 0,
     };
     // Restore waypoints
     if (od.waypoints && od.waypoints.length > 0) {
@@ -920,6 +1013,7 @@ function restoreSession(data: SerializedSession) {
         hold: wp.hold,
         goCode: wp.goCode,
         tempo: wp.tempo,
+        floorLevel: wp.floorLevel ?? 0,
       }));
       if (op.path.waypoints.length >= 2) {
         rebuildPathLUT(op);
@@ -942,9 +1036,11 @@ function restoreSession(data: SerializedSession) {
         hold: wp.hold,
         goCode: wp.goCode,
         tempo: wp.tempo,
+        floorLevel: wp.floorLevel ?? 0,
       })),
       tempo: os.tempo,
       pieTarget: os.pieTarget ? { x: os.pieTarget.x, y: os.pieTarget.y } : null,
+      startFloor: os.startFloor ?? 0,
     })),
   }));
   state.currentStageIndex = data.currentStageIndex || 0;
@@ -1096,9 +1192,31 @@ function snapAngle(start: Vec2, end: Vec2): Vec2 {
 }
 
 function updateFloor() {
-  const raw = computeFloorCells(customRoom.walls);
-  // Remove floor cells that are in floorCut
-  customRoom.floor = raw.filter(c2 => !customRoom.floorCut.some(fc => fc.x === c2.x && fc.y === c2.y));
+  if (buildActiveFloor === 0) {
+    const raw = computeFloorCells(customRoom.walls);
+    customRoom.floor = raw.filter(c2 => !customRoom.floorCut.some(fc => fc.x === c2.x && fc.y === c2.y));
+  } else {
+    const fl = customRoom.floors.find(f => f.level === buildActiveFloor);
+    if (fl) {
+      // For upper floors, compute floor from the floor layer's own walls
+      // If no walls yet, fill the bounds area as floor
+      if (fl.walls.length >= 3) {
+        const raw = computeFloorCells(fl.walls);
+        fl.floor = raw.filter(c2 => !fl.floorCut.some(fc => fc.x === c2.x && fc.y === c2.y));
+      } else if (fl.bounds.w > 0 && fl.bounds.h > 0) {
+        // No walls yet: fill entire bounds as walkable floor
+        const cells: Vec2[] = [];
+        for (let cx = fl.bounds.x; cx < fl.bounds.x + fl.bounds.w; cx += GRID) {
+          for (let cy = fl.bounds.y; cy < fl.bounds.y + fl.bounds.h; cy += GRID) {
+            if (!fl.floorCut.some(fc => fc.x === cx && fc.y === cy)) {
+              cells.push({ x: cx, y: cy });
+            }
+          }
+        }
+        fl.floor = cells;
+      }
+    }
+  }
 }
 
 /** Compute enclosed floor cells using ray-casting.
@@ -1150,18 +1268,19 @@ function rayHitsWall(ox: number, oy: number, dx: number, dy: number, walls: { a:
 
 // ---- Wall merging: merge collinear overlapping walls into one ----
 function mergeWalls() {
+  const fd = getBuildFloorData();
   const EPS = 2;
   let merged = true;
   while (merged) {
     merged = false;
-    for (let i = 0; i < customRoom.walls.length && !merged; i++) {
-      for (let j = i + 1; j < customRoom.walls.length && !merged; j++) {
-        const a = customRoom.walls[i], b = customRoom.walls[j];
+    for (let i = 0; i < fd.walls.length && !merged; i++) {
+      for (let j = i + 1; j < fd.walls.length && !merged; j++) {
+        const a = fd.walls[i], b = fd.walls[j];
         if (a.doors.length > 0 || b.doors.length > 0) continue;
         const m = tryMerge(a, b, EPS);
         if (m) {
-          customRoom.walls[i] = m;
-          customRoom.walls.splice(j, 1);
+          fd.walls[i] = m;
+          fd.walls.splice(j, 1);
           merged = true;
         }
       }
@@ -1353,6 +1472,9 @@ for (const name of STAMP_NAMES) {
   stampsEl.appendChild(btn);
 }
 
+// Initialize floor tabs
+refreshBuildFloorTabs();
+
 // Share codes
 document.getElementById('build-export')!.onclick = () => {
   sfxConfirm();
@@ -1377,8 +1499,32 @@ document.getElementById('build-import')!.onclick = () => {
     customRoom.threats = (d.t || []).map((t: number[]) => makeThreat(t[0], t[1]));
     customRoom.entryPoints = (d.e || []).map((e: number[]) => ({ x: e[0], y: e[1] }));
     customRoom.floor = (d.f || []).map((p: number[]) => ({ x: p[0], y: p[1] }));
-    customRoom.objects = ((d as any).o || []).map((o: any) => ({ x: o[0] ?? o.x, y: o[1] ?? o.y, w: o[2] ?? o.w, h: o[3] ?? o.h, type: o[4] ?? o.type ?? 'block' }));
+    customRoom.objects = ((d as any).o || []).map((o: any) => {
+      const obj: import('./types').RoomObject = { x: o[0] ?? o.x, y: o[1] ?? o.y, w: o[2] ?? o.w, h: o[3] ?? o.h, type: o[4] ?? o.type ?? 'block' };
+      if (o[5]) obj.connectsFloors = o[5];
+      return obj;
+    });
     customRoom.floorCut = ((d as any).fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y }));
+    // Import floor layers
+    customRoom.floors = ((d as any).floors || []).map((fl: any) => ({
+      level: fl.level,
+      bounds: fl.bounds,
+      walls: (fl.w || []).map((w: any[]) => {
+        const wall = makeWall(w[0], w[1], w[2], w[3]);
+        if (Array.isArray(w[4])) wall.doors = w[4].map((dd: any) => ({ pos: dd[0], open: dd[1] === 1 }));
+        return wall;
+      }),
+      threats: (fl.t || []).map((t: number[]) => makeThreat(t[0], t[1])),
+      objects: (fl.o || []).map((o: any) => {
+        const obj: import('./types').RoomObject = { x: o[0] ?? o.x, y: o[1] ?? o.y, w: o[2] ?? o.w, h: o[3] ?? o.h, type: o[4] ?? o.type ?? 'block' };
+        if (o[5]) obj.connectsFloors = o[5];
+        return obj;
+      }),
+      floor: [],
+      floorCut: (fl.fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
+    }));
+    buildActiveFloor = 0;
+    refreshBuildFloorTabs();
   } catch { alert('Invalid room code'); }
 };
 
@@ -1434,10 +1580,12 @@ function show(s: 'menu' | 'tut' | 'build' | 'game') {
 function startMission() {
   state.room = (ROOM_TEMPLATES as Record<string, () => Room>)[selRoom]();
   state.room.floor = computeFloorCells(state.room.walls);
+  if (!state.room.floors) state.room.floors = [];
   for (const w of state.room.walls) for (const d of w.doors) d.open = true;
   state.operators = [];
   state.selectedOpId = null;
   state.mode = 'planning';
+  state.activeFloor = 0;
   state.elapsedTime = 0;
   state.roomCleared = false;
   state.goCodesTriggered = { A: false, B: false, C: false };
@@ -1475,7 +1623,7 @@ window.addEventListener('keydown', (e) => {
   // Build screen shortcuts
   if (document.getElementById('build-screen')!.style.display !== 'none') {
     if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undoHistory(); return; }
-    const toolKeys: Record<string, BuildToolType> = { '1': 'line', '2': 'square', '3': 'delete', '4': 'door', '5': 'object', '6': 'stairs', '7': 'threat', '8': 'eraser' };
+    const toolKeys: Record<string, BuildToolType> = { '1': 'line', '2': 'square', '3': 'delete', '4': 'door', '5': 'object', '6': 'stairs', '7': 'threat', '8': 'eraser', '9': 'addfloor' };
     if (toolKeys[e.key]) {
       buildTool = toolKeys[e.key];
       document.querySelectorAll('.build-tool').forEach(b => b.classList.remove('active'));
@@ -1617,6 +1765,7 @@ function saveStage() {
       waypoints: JSON.parse(JSON.stringify(op.path.waypoints)),
       tempo: op.tempo,
       pieTarget: op.pieTarget ? { x: op.pieTarget.x, y: op.pieTarget.y } : null,
+      startFloor: op.currentFloor,
     })),
   };
   state.stages.push(stage);
@@ -1629,6 +1778,9 @@ function saveStage() {
       const endPos = { x: lastWp.position.x, y: lastWp.position.y };
       op.position = { x: endPos.x, y: endPos.y };
       op.startPosition = { x: endPos.x, y: endPos.y };
+      // Update floor to last waypoint's floor
+      op.currentFloor = lastWp.floorLevel;
+      op.startFloor = lastWp.floorLevel;
       // Compute end angle: explicit facingOverride > pie target > keep current
       if (lastWp.facingOverride !== null) {
         op.angle = lastWp.facingOverride;
@@ -1671,6 +1823,7 @@ function doGo() {
       waypoints: JSON.parse(JSON.stringify(op.path.waypoints)),
       tempo: op.tempo,
       pieTarget: op.pieTarget ? { x: op.pieTarget.x, y: op.pieTarget.y } : null,
+      startFloor: op.currentFloor,
     })),
   };
 
@@ -1684,6 +1837,7 @@ function doGo() {
         waypoints: JSON.parse(JSON.stringify(op.path.waypoints)),
         tempo: op.tempo,
         pieTarget: op.pieTarget ? { x: op.pieTarget.x, y: op.pieTarget.y } : null,
+        startFloor: op.currentFloor,
       })),
     };
     state.stages.push(stage);
@@ -1726,6 +1880,8 @@ function loadAndExecuteStage(stageIdx: number) {
       op.path.waypoints = JSON.parse(JSON.stringify(snap.waypoints));
       op.tempo = snap.tempo;
       op.pieTarget = snap.pieTarget ? { x: snap.pieTarget.x, y: snap.pieTarget.y } : null;
+      op.currentFloor = snap.startFloor ?? 0;
+      op.startFloor = snap.startFloor ?? 0;
     } else {
       // Operator not in this stage - clear its path but keep position
       op.path.waypoints = [];
@@ -1775,12 +1931,22 @@ function checkStageCompletion() {
   }
 }
 
+/** Reset all threats across all floors */
+function resetAllThreats() {
+  for (const t of state.room.threats) { t.neutralized = false; t.neutralizeTimer = 0; }
+  if (state.room.floors) {
+    for (const fl of state.room.floors) {
+      for (const t of fl.threats) { t.neutralized = false; t.neutralizeTimer = 0; }
+    }
+  }
+}
+
 /** Replay all stages from the beginning */
 function doReplay() {
   if (state.stages.length === 0) return;
   state.isReplaying = true;
   state.roomCleared = false;
-  for (const t of state.room.threats) { t.neutralized = false; t.neutralizeTimer = 0; }
+  resetAllThreats();
   loadAndExecuteStage(0);
 }
 
@@ -1816,6 +1982,8 @@ function doReset() {
       op.path.waypoints = JSON.parse(JSON.stringify(snap.waypoints));
       op.tempo = snap.tempo;
       op.pieTarget = snap.pieTarget ? { x: snap.pieTarget.x, y: snap.pieTarget.y } : null;
+      op.currentFloor = snap.startFloor ?? 0;
+      op.startFloor = snap.startFloor ?? 0;
       op.distanceTraveled = 0;
       op.currentWaypointIndex = 0;
       op.isHolding = false;
@@ -1841,7 +2009,7 @@ function doReset() {
     state.stages = [];
     state.currentStageIndex = 0;
   }
-  for (const t of state.room.threats) { t.neutralized = false; t.neutralizeTimer = 0; }
+  resetAllThreats();
 }
 
 /** Clear everything - operators, paths, stages, back to fresh deployment */
@@ -1879,7 +2047,7 @@ function doClearLevel() {
     op.isMoving = false;
     op.reachedEnd = false;
   }
-  for (const t of state.room.threats) { t.neutralized = false; t.neutralizeTimer = 0; }
+  resetAllThreats();
 }
 
 function deleteSelected() {
@@ -2178,6 +2346,30 @@ function handleInput() {
   } else if (!shareHit) {
     state.hoveredHudBtn = null;
     canvas.style.cursor = 'crosshair';
+    // Floor indicator pill hover (top-right)
+    const maxFloor = state.room.floors ? Math.max(0, ...state.room.floors.map(f => f.level)) : 0;
+    if (maxFloor > 0) {
+      const pillW = 36, pillH = 22, gap = 4, margin = 10;
+      const totalW = (maxFloor + 1) * (pillW + gap) - gap;
+      const startX = canvas.width - margin - totalW;
+      const fy = margin;
+      for (let level = 0; level <= maxFloor; level++) {
+        const px = startX + level * (pillW + gap);
+        if (hitBtn(input.mousePos, px, fy, pillW, pillH)) {
+          state.hoveredHudBtn = `floor_${level}` as import('./types').HudBtn;
+          canvas.style.cursor = 'pointer';
+          break;
+        }
+      }
+    }
+  }
+
+  // Floor pill clicks (work in all modes)
+  if (input.justPressed && state.hoveredHudBtn && (state.hoveredHudBtn as string).startsWith('floor_')) {
+    const level = parseInt((state.hoveredHudBtn as string).split('_')[1]);
+    state.activeFloor = level;
+    sfxTick();
+    return;
   }
 
   // HUD bar button clicks work in ALL modes (including executing)
@@ -2282,7 +2474,7 @@ function handleInput() {
               }
             } else if (item.id === 'route') {
               if (op.path.waypoints.length === 0) {
-                op.path.waypoints = [makeWaypoint(op.position)];
+                op.path.waypoints = [makeWaypoint(op.position, op.currentFloor)];
                 op.path.splineLUT = null;
               }
               state.interaction = { type: 'placing_waypoints', opId: op.id };
@@ -2342,6 +2534,8 @@ function handleInput() {
       op.smoothPosition = copy(op.position);
       op.angle = 0; // face right when placed
       op.startAngle = 0;
+      op.currentFloor = state.activeFloor;
+      op.startFloor = state.activeFloor;
       state.interaction = { type: 'idle' };
     }
     return;
@@ -2415,7 +2609,16 @@ function handleInput() {
         state.radialMenu = { center: copy(op.position), opId: op.id, wpIdx: -1, hoveredIdx: -1, animT: 0 };
         return;
       }
-      op.path.waypoints.push(makeWaypoint(worldMouse));
+      // Determine floor level for this waypoint
+      let wpFloor = state.activeFloor;
+      // Check if placing on stairs — auto-transition to destination floor
+      const stair = getStairAtPoint(state.room, worldMouse.x, worldMouse.y, state.activeFloor);
+      if (stair && stair.connectsFloors) {
+        const destFloor = getStairDestFloor(stair, state.activeFloor);
+        wpFloor = destFloor;
+        state.activeFloor = destFloor; // Auto-switch view to destination floor
+      }
+      op.path.waypoints.push(makeWaypoint(worldMouse, wpFloor));
       rebuildPathLUT(op);
       // Set this as pending node needing confirm/cancel
       state.pendingNode = { opId: op.id, wpIdx: op.path.waypoints.length - 1 };
@@ -2614,7 +2817,7 @@ function handleInput() {
           const wc = selOp.path.waypoints.length;
           const frac = bestI / (lut.samples.length - 1);
           const insertAfter = Math.min(Math.floor(frac * (wc - 1)), wc - 2);
-          selOp.path.waypoints.splice(insertAfter + 1, 0, makeWaypoint(cp));
+          selOp.path.waypoints.splice(insertAfter + 1, 0, makeWaypoint(cp, state.activeFloor));
           rebuildPathLUT(selOp);
           state.interaction = { type: 'dragging_node', opId: selOp.id, wpIdx: insertAfter + 1 };
           return;
@@ -2656,17 +2859,17 @@ function buildScreenPos(e: MouseEvent): Vec2 {
 
 buildCv.addEventListener('mousemove', (e) => {
   buildMousePos = buildPos(e);
+  const fd = getBuildFloorData();
   if (buildTool === 'delete') {
     buildHoveredWall = -1;
     buildHoveredObject = -1;
     let best = 15;
-    for (let i = 0; i < customRoom.walls.length; i++) {
-      const d = distToSegment(buildMousePos, customRoom.walls[i].a, customRoom.walls[i].b);
+    for (let i = 0; i < fd.walls.length; i++) {
+      const d = distToSegment(buildMousePos, fd.walls[i].a, fd.walls[i].b);
       if (d < best) { best = d; buildHoveredWall = i; }
     }
-    // Also check objects (point-in-rect)
-    for (let i = 0; i < customRoom.objects.length; i++) {
-      const o = customRoom.objects[i];
+    for (let i = 0; i < fd.objects.length; i++) {
+      const o = fd.objects[i];
       if (buildMousePos.x >= o.x && buildMousePos.x <= o.x + o.w &&
           buildMousePos.y >= o.y && buildMousePos.y <= o.y + o.h) {
         buildHoveredObject = i;
@@ -2674,12 +2877,11 @@ buildCv.addEventListener('mousemove', (e) => {
     }
   }
   if (buildTool === 'door') {
-    // Find nearest door slot across all walls
     buildHoveredWall = -1;
     buildHoveredDoorSlot = null;
     let bestDist = 20;
-    for (let i = 0; i < customRoom.walls.length; i++) {
-      const w = customRoom.walls[i];
+    for (let i = 0; i < fd.walls.length; i++) {
+      const w = fd.walls[i];
       const slots = getDoorSlots(w);
       const dx = w.b.x - w.a.x, dy = w.b.y - w.a.y;
       for (const frac of slots) {
@@ -2695,7 +2897,7 @@ buildCv.addEventListener('mousemove', (e) => {
   }
   if (buildMouseDown && buildDragStart) {
     if (buildTool === 'line') buildDragEnd = snapAngle(buildDragStart, snapVec(buildMousePos));
-    else if (buildTool === 'square' || buildTool === 'room' || buildTool === 'object' || buildTool === 'stairs' || buildTool === 'eraser') buildDragEnd = snapVec(buildMousePos);
+    else if (buildTool === 'square' || buildTool === 'room' || buildTool === 'object' || buildTool === 'stairs' || buildTool === 'eraser' || buildTool === 'addfloor') buildDragEnd = snapVec(buildMousePos);
   }
 });
 
@@ -2703,52 +2905,51 @@ buildCv.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const p = buildPos(e);
   buildMouseDown = true;
+  const fd = getBuildFloorData();
 
-  if (buildTool === 'line' || buildTool === 'square' || buildTool === 'room' || buildTool === 'object' || buildTool === 'stairs' || buildTool === 'eraser') {
+  if (buildTool === 'line' || buildTool === 'square' || buildTool === 'room' || buildTool === 'object' || buildTool === 'stairs' || buildTool === 'eraser' || buildTool === 'addfloor') {
     buildDragStart = snapVec(p); buildDragEnd = null;
   } else if (buildTool === 'delete') {
     if (buildHoveredObject >= 0) {
-      pushHistory(); customRoom.objects.splice(buildHoveredObject, 1); buildHoveredObject = -1;
+      pushHistory(); fd.objects.splice(buildHoveredObject, 1); buildHoveredObject = -1;
     } else if (buildHoveredWall >= 0) {
-      pushHistory(); customRoom.walls.splice(buildHoveredWall, 1); buildHoveredWall = -1; updateFloor();
+      pushHistory(); fd.walls.splice(buildHoveredWall, 1); buildHoveredWall = -1; updateFloor();
     }
   } else if (buildTool === 'door') {
     if (buildHoveredDoorSlot) {
-      const w = customRoom.walls[buildHoveredDoorSlot.wallIdx];
+      const w = fd.walls[buildHoveredDoorSlot.wallIdx];
       const clickedFrac = buildHoveredDoorSlot.slotFrac;
       pushHistory();
-      // Check if there's already a door at this slot
       const existIdx = w.doors.findIndex(d => Math.abs(d.pos - clickedFrac) < 0.05);
       if (existIdx >= 0) {
-        // Toggle: open -> closed -> remove
         if (w.doors[existIdx].open) { w.doors[existIdx].open = false; }
         else { w.doors.splice(existIdx, 1); }
       } else {
-        // Add a new door at this slot
         w.doors.push({ pos: clickedFrac, open: true });
       }
     }
   } else if (buildTool === 'threat') {
-    pushHistory(); customRoom.threats.push(makeThreat(snapGrid(p.x), snapGrid(p.y)));
+    pushHistory(); fd.threats.push(makeThreat(snapGrid(p.x), snapGrid(p.y)));
   }
 });
 
 buildCv.addEventListener('mouseup', () => {
   if (!buildMouseDown) return;
   buildMouseDown = false;
+  const fd = getBuildFloorData();
 
   if (buildTool === 'line' && buildDragStart && buildDragEnd) {
     const s = buildDragStart, e = { x: snapGrid(buildDragEnd.x), y: snapGrid(buildDragEnd.y) };
-    if (distance(s, e) > GRID * 0.5) { pushHistory(); customRoom.walls.push(makeWall(s.x, s.y, e.x, e.y)); mergeWalls(); updateFloor(); }
+    if (distance(s, e) > GRID * 0.5) { pushHistory(); fd.walls.push(makeWall(s.x, s.y, e.x, e.y)); mergeWalls(); updateFloor(); }
   } else if (buildTool === 'square' && buildDragStart && buildDragEnd) {
     const s = buildDragStart, e = buildDragEnd;
     const x0 = Math.min(s.x, e.x), y0 = Math.min(s.y, e.y), x1 = Math.max(s.x, e.x), y1 = Math.max(s.y, e.y);
     if (x1 - x0 > GRID * 0.5 && y1 - y0 > GRID * 0.5) {
       pushHistory();
-      customRoom.walls.push(makeWall(x0, y0, x1, y0)); // top
-      customRoom.walls.push(makeWall(x1, y0, x1, y1)); // right
-      customRoom.walls.push(makeWall(x1, y1, x0, y1)); // bottom
-      customRoom.walls.push(makeWall(x0, y1, x0, y0)); // left
+      fd.walls.push(makeWall(x0, y0, x1, y0));
+      fd.walls.push(makeWall(x1, y0, x1, y1));
+      fd.walls.push(makeWall(x1, y1, x0, y1));
+      fd.walls.push(makeWall(x0, y1, x0, y0));
       mergeWalls(); updateFloor();
     }
   } else if (buildTool === 'room' && buildDragStart && buildDragEnd) {
@@ -2759,7 +2960,7 @@ buildCv.addEventListener('mouseup', () => {
       pushHistory();
       const stampFn = STAMP_TEMPLATES[buildSelectedStamp];
       const newWalls = stampFn(x0, y0, rw, rh);
-      customRoom.walls.push(...newWalls);
+      fd.walls.push(...newWalls);
       mergeWalls(); updateFloor();
     }
   } else if ((buildTool === 'object' || buildTool === 'stairs') && buildDragStart && buildDragEnd) {
@@ -2768,22 +2969,64 @@ buildCv.addEventListener('mouseup', () => {
     const rw = x1 - x0, rh = y1 - y0;
     if (rw > GRID * 0.5 && rh > GRID * 0.5) {
       pushHistory();
-      customRoom.objects.push({ x: x0, y: y0, w: rw, h: rh, type: buildTool === 'stairs' ? 'stairs' : 'block' });
+      fd.objects.push({ x: x0, y: y0, w: rw, h: rh, type: buildTool === 'stairs' ? 'stairs' : 'block' });
     }
   } else if (buildTool === 'eraser' && buildDragStart && buildDragEnd) {
     const s = buildDragStart, e = buildDragEnd;
     const x0 = Math.min(s.x, e.x), y0 = Math.min(s.y, e.y), x1 = Math.max(s.x, e.x), y1 = Math.max(s.y, e.y);
     if (x1 - x0 > 2 || y1 - y0 > 2) {
       pushHistory();
-      // Add all grid cells in the drag rect to floorCut
       for (let cx = snapGrid(x0); cx < x1; cx += GRID) {
         for (let cy = snapGrid(y0); cy < y1; cy += GRID) {
-          if (!customRoom.floorCut.some(c2 => c2.x === cx && c2.y === cy)) {
-            customRoom.floorCut.push({ x: cx, y: cy });
+          if (!fd.floorCut.some(c2 => c2.x === cx && c2.y === cy)) {
+            fd.floorCut.push({ x: cx, y: cy });
           }
         }
       }
-      updateFloor(); // recompute to apply cuts
+      updateFloor();
+    }
+  } else if (buildTool === 'addfloor' && buildDragStart && buildDragEnd) {
+    const s = buildDragStart, e = buildDragEnd;
+    const x0 = Math.min(s.x, e.x), y0 = Math.min(s.y, e.y), x1 = Math.max(s.x, e.x), y1 = Math.max(s.y, e.y);
+    const rw = x1 - x0, rh = y1 - y0;
+    if (rw > GRID * 2 && rh > GRID * 2) {
+      // Check if any stairs overlap this area (on ground floor)
+      const allObjs = [...customRoom.objects];
+      for (const fl of customRoom.floors) allObjs.push(...fl.objects);
+      const overlappingStairs = allObjs.filter(obj =>
+        obj.type === 'stairs' &&
+        obj.x < x1 && obj.x + obj.w > x0 &&
+        obj.y < y1 && obj.y + obj.h > y0
+      );
+      if (overlappingStairs.length === 0) {
+        alert('The floor area must overlap at least one staircase. Place stairs first, then create a floor over them.');
+      } else {
+        pushHistory();
+        const newLevel = (customRoom.floors.length > 0 ? Math.max(...customRoom.floors.map(f => f.level)) : 0) + 1;
+        const newFloor: import('./types').FloorLayer = {
+          level: newLevel,
+          bounds: { x: x0, y: y0, w: rw, h: rh },
+          walls: [],
+          threats: [],
+          objects: [],
+          floor: [],
+          floorCut: [],
+        };
+        // Fill floor cells for the new floor bounds
+        for (let cx = x0; cx < x1; cx += GRID) {
+          for (let cy = y0; cy < y1; cy += GRID) {
+            newFloor.floor.push({ x: cx, y: cy });
+          }
+        }
+        customRoom.floors.push(newFloor);
+        // Auto-connect overlapping stairs
+        for (const stair of overlappingStairs) {
+          stair.connectsFloors = [newLevel - 1, newLevel];
+        }
+        buildActiveFloor = newLevel;
+        refreshBuildFloorTabs();
+        sfxConfirm();
+      }
     }
   }
   buildDragStart = null; buildDragEnd = null;
@@ -2878,10 +3121,38 @@ function renderBuild() {
   ctx.scale(buildCam.zoom, buildCam.zoom);
   ctx.translate(-buildCam.x, -buildCam.y);
 
-  // Floor cells
-  if (customRoom.floor.length > 0) {
-    ctx.fillStyle = '#1a1814';
-    for (const cell of customRoom.floor) {
+  // ---- Render inactive floors as ghosts first ----
+  const allFloorLevels = [0, ...customRoom.floors.map(f => f.level)];
+  for (const level of allFloorLevels) {
+    if (level === buildActiveFloor) continue; // skip active floor, render it fully later
+    const flData = level === 0
+      ? { walls: customRoom.walls, threats: customRoom.threats, objects: customRoom.objects, floor: customRoom.floor }
+      : (() => { const fl = customRoom.floors.find(f => f.level === level); return fl ? { walls: fl.walls, threats: fl.threats, objects: fl.objects, floor: fl.floor } : null; })();
+    if (!flData) continue;
+    ctx.save();
+    ctx.globalAlpha = 0.2;
+    // Ghost floor cells
+    if (flData.floor.length > 0) {
+      ctx.fillStyle = level < buildActiveFloor ? '#0e0c08' : '#101824';
+      for (const cell of flData.floor) ctx.fillRect(cell.x, cell.y, GRID, GRID);
+    }
+    // Ghost walls
+    for (const w of flData.walls) drawBuildWall(ctx, w, false);
+    // Ghost objects
+    for (const obj of flData.objects) {
+      ctx.fillStyle = 'rgba(80,80,80,0.3)';
+      ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+    }
+    ctx.restore();
+  }
+
+  // ---- Active floor data ----
+  const afd = getBuildFloorData();
+
+  // Floor cells (active floor)
+  if (afd.floor.length > 0) {
+    ctx.fillStyle = buildActiveFloor === 0 ? '#1a1814' : '#141a20';
+    for (const cell of afd.floor) {
       ctx.fillRect(cell.x, cell.y, GRID, GRID);
     }
   }
@@ -2909,9 +3180,9 @@ function renderBuild() {
     ctx.setLineDash([]);
   }
 
-  // ---- Walls ----
-  for (let i = 0; i < customRoom.walls.length; i++) {
-    const w = customRoom.walls[i];
+  // ---- Walls (active floor) ----
+  for (let i = 0; i < afd.walls.length; i++) {
+    const w = afd.walls[i];
     const hover = i === buildHoveredWall && (buildTool === 'delete' || buildTool === 'door');
     drawBuildWall(ctx, w, hover);
   }
@@ -2981,8 +3252,8 @@ function renderBuild() {
     }
   }
 
-  // ---- Threats ----
-  for (const t of customRoom.threats) {
+  // ---- Threats (active floor) ----
+  for (const t of afd.threats) {
     ctx.fillStyle = 'rgba(200,50,50,0.12)';
     ctx.beginPath(); ctx.arc(t.position.x, t.position.y, 16, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = '#cc3333'; ctx.lineWidth = 3; ctx.lineCap = 'round';
@@ -2992,9 +3263,9 @@ function renderBuild() {
     ctx.fillText('THREAT', t.position.x, t.position.y + 10);
   }
 
-  // ---- Objects (blocks/stairs) ----
-  for (let oi = 0; oi < customRoom.objects.length; oi++) {
-    const obj = customRoom.objects[oi];
+  // ---- Objects (blocks/stairs, active floor) ----
+  for (let oi = 0; oi < afd.objects.length; oi++) {
+    const obj = afd.objects[oi];
     const objHover = oi === buildHoveredObject && buildTool === 'delete';
     if (obj.type === 'block') {
       ctx.fillStyle = objHover ? 'rgba(255,80,60,0.3)' : 'rgba(100,85,65,0.6)';
@@ -3023,6 +3294,45 @@ function renderBuild() {
         }
       }
     }
+  }
+
+  // ---- Stair connection labels ----
+  for (const obj of afd.objects) {
+    if (obj.type === 'stairs' && obj.connectsFloors) {
+      const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2;
+      ctx.fillStyle = 'rgba(100,180,220,0.7)'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(`F${obj.connectsFloors[0] + 1}\u2194F${obj.connectsFloors[1] + 1}`, cx, cy);
+    }
+  }
+
+  // ---- Floor bounds for upper floors ----
+  for (const fl of customRoom.floors) {
+    const b = fl.bounds;
+    if (b.w > 0 && b.h > 0) {
+      const isActive = fl.level === buildActiveFloor;
+      ctx.strokeStyle = isActive ? 'rgba(100,180,220,0.6)' : 'rgba(100,180,220,0.15)';
+      ctx.lineWidth = isActive ? 2 : 1;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(b.x, b.y, b.w, b.h);
+      ctx.setLineDash([]);
+      // Label
+      ctx.fillStyle = isActive ? 'rgba(100,180,220,0.8)' : 'rgba(100,180,220,0.25)';
+      ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+      ctx.fillText(`F${fl.level + 1}`, b.x + 4, b.y - 4);
+    }
+  }
+
+  // ---- Preview: Add Floor drag ----
+  if (buildTool === 'addfloor' && buildDragStart && buildDragEnd) {
+    const s = buildDragStart, e = buildDragEnd;
+    const x0 = Math.min(s.x, e.x), y0 = Math.min(s.y, e.y), x1 = Math.max(s.x, e.x), y1 = Math.max(s.y, e.y);
+    ctx.fillStyle = 'rgba(100,180,220,0.1)';
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.strokeStyle = 'rgba(100,180,220,0.6)'; ctx.lineWidth = 2;
+    ctx.setLineDash([8, 4]); ctx.strokeRect(x0, y0, x1 - x0, y1 - y0); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(100,180,220,0.8)'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    const newLvl = (customRoom.floors.length > 0 ? Math.max(...customRoom.floors.map(f => f.level)) : 0) + 1;
+    ctx.fillText(`New Floor F${newLvl + 1}  ${x1 - x0}\u00D7${y1 - y0}`, (x0 + x1) / 2, y0 - 6);
   }
 
   // ---- Entry Points ----
@@ -3099,7 +3409,7 @@ function renderBuild() {
   // ---- Floor cut cells visualization ----
   if (buildTool === 'eraser') {
     ctx.fillStyle = 'rgba(255,60,40,0.08)';
-    for (const fc of customRoom.floorCut) {
+    for (const fc of afd.floorCut) {
       ctx.fillRect(fc.x, fc.y, GRID, GRID);
     }
   }
@@ -3149,7 +3459,7 @@ function renderBuild() {
 
   // Tool info HUD
   const toolLabel: Record<BuildToolType, string> = {
-    line: 'LINE', square: 'SQUARE', delete: 'DELETE', door: 'DOOR', threat: 'THREAT', object: 'OBJECT', stairs: 'STAIRS', eraser: 'ERASER', room: buildSelectedStamp.toUpperCase(),
+    line: 'LINE', square: 'SQUARE', delete: 'DELETE', door: 'DOOR', threat: 'THREAT', object: 'OBJECT', stairs: 'STAIRS', eraser: 'ERASER', room: buildSelectedStamp.toUpperCase(), addfloor: 'ADD FLOOR',
   };
   const toolHint: Record<BuildToolType, string> = {
     line: 'Drag to draw a wall. Snaps to 15\u00B0 increments.',
@@ -3161,6 +3471,7 @@ function renderBuild() {
     stairs: 'Drag to place a staircase.',
     eraser: 'Drag to erase floor tiles.',
     room: 'Drag to stamp a ' + buildSelectedStamp + ' room layout.',
+    addfloor: 'Drag to select area for a new floor. Must overlap stairs.',
   };
   ctx.fillStyle = 'rgba(8,14,18,0.85)';
   ctx.fillRect(6, 6, 320, 32);
@@ -3175,11 +3486,12 @@ function renderBuild() {
   ctx.fillStyle = 'rgba(8,14,18,0.75)'; ctx.fillRect(0, H - 22, W, 22);
   ctx.strokeStyle = 'rgba(68,187,170,0.1)'; ctx.beginPath(); ctx.moveTo(0, H - 22); ctx.lineTo(W, H - 22); ctx.stroke();
   ctx.fillStyle = 'rgba(138,170,153,0.45)'; ctx.font = '9px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  const doors = customRoom.walls.reduce((s, w) => s + w.doors.length, 0);
-  const objs = customRoom.objects.length;
-  ctx.fillText(`Walls: ${customRoom.walls.length}  Doors: ${doors}  Objects: ${objs}  Threats: ${customRoom.threats.length}`, 10, H - 11);
+  const doors = afd.walls.reduce((s, w) => s + w.doors.length, 0);
+  const objs = afd.objects.length;
+  const floorLabel = buildActiveFloor === 0 ? 'F1 (Ground)' : `F${buildActiveFloor + 1}`;
+  ctx.fillText(`Floor: ${floorLabel}  Walls: ${afd.walls.length}  Doors: ${doors}  Objects: ${objs}  Threats: ${afd.threats.length}`, 10, H - 11);
   ctx.textAlign = 'right';
-  ctx.fillText('[1-6] Tools  [Ctrl+Z] Undo', W - 10, H - 11);
+  ctx.fillText('[1-9] Tools  [Ctrl+Z] Undo', W - 10, H - 11);
 }
 
 function drawBuildWall(ctx: CanvasRenderingContext2D, w: { a: Vec2; b: Vec2; doors: { pos: number; open: boolean }[] }, hover: boolean) {

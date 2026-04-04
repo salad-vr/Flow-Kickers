@@ -79,7 +79,7 @@ export interface NodePopup { opId: number; wpIdx: number; position: Vec2; }
 
 export interface Camera { x: number; y: number; zoom: number; }
 
-export type HudBtn = 'go' | 'reset' | 'menu' | 'share' | 'save_stage' | 'replay' | 'clear_level' | 'save_progress' | 'edit_stage' | `stage_${number}` | null;
+export type HudBtn = 'go' | 'reset' | 'menu' | 'share' | 'save_stage' | 'replay' | 'clear_level' | 'save_progress' | 'edit_stage' | `stage_${number}` | `floor_${number}` | null;
 
 /** A snapshot of all operator paths + start positions for one phase of the plan */
 export interface Stage {
@@ -91,6 +91,8 @@ export interface Stage {
     waypoints: Waypoint[];
     tempo: number;
     pieTarget: Vec2 | null;
+    /** Floor level the operator starts this stage on */
+    startFloor: number;
   }[];
 }
 
@@ -173,6 +175,8 @@ export interface GameState {
   preGoSnapshot: Stage | null;
   /** Index of stage user clicked in the indicator to view */
   viewingStageIndex: number;
+  /** Currently viewed/active floor level in game mode (0 = ground) */
+  activeFloor: number;
 }
 
 export function makeWaypoint(pos: Vec2, floorLevel = 0): Waypoint {

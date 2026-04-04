@@ -26,7 +26,8 @@
  * Legacy format: raw JSON starting with '{' — still accepted on decode.
  */
 
-const CODE_PREFIX = 'v1:';
+const CODE_PREFIX_V1 = 'v1:';
+const CODE_PREFIX_V2 = 'v2:';
 
 const OBJ_TYPE_MAP: Record<string, number> = { block: 0, stairs: 1 };
 const OBJ_TYPE_REV: string[] = ['block', 'stairs'];
@@ -36,8 +37,9 @@ export interface RoomCodeData {
   t: number[][]; // threats: [x, y]
   e: number[][]; // entry points: [x, y]
   f?: number[][]; // floor (optional — recomputed on load)
-  o?: any[];     // objects: [x, y, w, h, type]
+  o?: any[];     // objects: [x, y, w, h, type, connectsFloors?]
   fc?: any[];    // floor cut points: [x, y]
+  floors?: any[]; // upper floor layers (v2)
 }
 
 /** Encode room data into a compact share code string. */
@@ -45,11 +47,19 @@ export function encodeRoomCode(data: {
   walls: { a: { x: number; y: number }; b: { x: number; y: number }; doors: { pos: number; open: boolean }[] }[];
   threats: { position: { x: number; y: number } }[];
   entryPoints: { x: number; y: number }[];
-  objects?: { x: number; y: number; w: number; h: number; type: string }[];
+  objects?: { x: number; y: number; w: number; h: number; type: string; connectsFloors?: [number, number] }[];
   floorCut?: { x: number; y: number }[];
+  floors?: { level: number; bounds: { x: number; y: number; w: number; h: number };
+    walls: { a: { x: number; y: number }; b: { x: number; y: number }; doors: { pos: number; open: boolean }[] }[];
+    threats: { position: { x: number; y: number } }[];
+    objects: { x: number; y: number; w: number; h: number; type: string; connectsFloors?: [number, number] }[];
+    floor: { x: number; y: number }[];
+    floorCut: { x: number; y: number }[];
+  }[];
 }): string {
   const objects = data.objects || [];
   const floorCut = data.floorCut || [];
+  const floors = data.floors || [];
 
   // Calculate required buffer size
   let size = 2; // wallCount
@@ -62,9 +72,22 @@ export function encodeRoomCode(data: {
   size += 2; // entryCount
   size += data.entryPoints.length * 4; // each: x, y (Int16 each)
   size += 2; // objectCount
-  size += objects.length * 9; // each: x, y, w, h (Int16 each = 8) + type (Uint8 = 1)
+  size += objects.length * (9 + 5); // each: x, y, w, h (Int16 = 8) + type (U8 = 1) + hasConnect (U8) + f0 (I16) + f1 (I16) = 14
   size += 2; // floorCutCount
   size += floorCut.length * 4; // each: x, y (Int16 each)
+  // Floor layers
+  size += 2; // floorCount
+  for (const fl of floors) {
+    size += 2 + 2 * 4; // level (U16) + bounds x,y,w,h (I16 each)
+    size += 2; // wallCount
+    for (const w of fl.walls) { size += 2 * 4 + 2; size += w.doors.length * 3; }
+    size += 2; // threatCount
+    size += fl.threats.length * 4;
+    size += 2; // objectCount
+    size += fl.objects.length * 14;
+    size += 2; // floorCutCount
+    size += fl.floorCut.length * 4;
+  }
 
   const buf = new ArrayBuffer(size);
   const view = new DataView(buf);
@@ -102,7 +125,7 @@ export function encodeRoomCode(data: {
     writeI16(e.y);
   }
 
-  // Objects
+  // Objects (with connectsFloors)
   writeU16(objects.length);
   for (const o of objects) {
     writeI16(o.x);
@@ -110,6 +133,15 @@ export function encodeRoomCode(data: {
     writeI16(o.w);
     writeI16(o.h);
     writeU8(OBJ_TYPE_MAP[o.type] ?? 0);
+    if (o.connectsFloors) {
+      writeU8(1);
+      writeI16(o.connectsFloors[0]);
+      writeI16(o.connectsFloors[1]);
+    } else {
+      writeU8(0);
+      writeI16(0);
+      writeI16(0);
+    }
   }
 
   // Floor cut points
@@ -119,13 +151,41 @@ export function encodeRoomCode(data: {
     writeI16(p.y);
   }
 
+  // Floor layers
+  writeU16(floors.length);
+  for (const fl of floors) {
+    writeU16(fl.level);
+    writeI16(fl.bounds.x); writeI16(fl.bounds.y); writeI16(fl.bounds.w); writeI16(fl.bounds.h);
+    // Walls
+    writeU16(fl.walls.length);
+    for (const w of fl.walls) {
+      writeI16(w.a.x); writeI16(w.a.y); writeI16(w.b.x); writeI16(w.b.y);
+      writeU16(w.doors.length);
+      for (const d of w.doors) { writeU16(Math.round(d.pos * 100)); writeU8(d.open ? 1 : 0); }
+    }
+    // Threats
+    writeU16(fl.threats.length);
+    for (const t of fl.threats) { writeI16(t.position.x); writeI16(t.position.y); }
+    // Objects
+    writeU16(fl.objects.length);
+    for (const o of fl.objects) {
+      writeI16(o.x); writeI16(o.y); writeI16(o.w); writeI16(o.h);
+      writeU8(OBJ_TYPE_MAP[o.type] ?? 0);
+      if (o.connectsFloors) { writeU8(1); writeI16(o.connectsFloors[0]); writeI16(o.connectsFloors[1]); }
+      else { writeU8(0); writeI16(0); writeI16(0); }
+    }
+    // Floor cut
+    writeU16(fl.floorCut.length);
+    for (const p of fl.floorCut) { writeI16(p.x); writeI16(p.y); }
+  }
+
   // Convert to Base64
   const bytes = new Uint8Array(buf);
   let binary = '';
   for (let i = 0; i < bytes.length; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-  return CODE_PREFIX + btoa(binary);
+  return CODE_PREFIX_V2 + btoa(binary);
 }
 
 /** Encode room data from the raw serialized format (w/t/e/o/fc arrays). */
@@ -171,12 +231,14 @@ export function decodeRoomCode(code: string): RoomCodeData {
     return d as RoomCodeData;
   }
 
-  // v1: binary + base64
-  if (!trimmed.startsWith(CODE_PREFIX)) {
+  // v1 or v2: binary + base64
+  const isV1 = trimmed.startsWith(CODE_PREFIX_V1);
+  const isV2 = trimmed.startsWith(CODE_PREFIX_V2);
+  if (!isV1 && !isV2) {
     throw new Error('Unrecognized room code format');
   }
 
-  const b64 = trimmed.slice(CODE_PREFIX.length);
+  const b64 = trimmed.slice(isV2 ? CODE_PREFIX_V2.length : CODE_PREFIX_V1.length);
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
@@ -227,7 +289,15 @@ export function decodeRoomCode(code: string): RoomCodeData {
     for (let i = 0; i < objCount; i++) {
       const ox = readI16(), oy = readI16(), ow = readI16(), oh = readI16();
       const otype = readU8();
-      o.push([ox, oy, ow, oh, OBJ_TYPE_REV[otype] || 'block']);
+      let connectsFloors: [number, number] | undefined;
+      if (isV2) {
+        const hasConnect = readU8();
+        const f0 = readI16(), f1 = readI16();
+        if (hasConnect) connectsFloors = [f0, f1];
+      }
+      const objData: any = [ox, oy, ow, oh, OBJ_TYPE_REV[otype] || 'block'];
+      if (connectsFloors) objData.push(connectsFloors);
+      o.push(objData);
     }
   }
 
@@ -240,5 +310,45 @@ export function decodeRoomCode(code: string): RoomCodeData {
     }
   }
 
-  return { w, t, e, o, fc };
+  // Floor layers (v2 only)
+  const floors: any[] = [];
+  if (isV2 && offset < len) {
+    const floorCount = readU16();
+    for (let fi = 0; fi < floorCount; fi++) {
+      const level = readU16();
+      const bx = readI16(), by = readI16(), bw = readI16(), bh = readI16();
+      // Walls
+      const fwCount = readU16();
+      const fWalls: any[][] = [];
+      for (let i = 0; i < fwCount; i++) {
+        const ax = readI16(), ay = readI16(), bx2 = readI16(), by2 = readI16();
+        const dc = readU16();
+        const doors: [number, number][] = [];
+        for (let j = 0; j < dc; j++) { doors.push([readU16() / 100, readU8()]); }
+        fWalls.push([ax, ay, bx2, by2, doors]);
+      }
+      // Threats
+      const ftCount = readU16();
+      const fThreats: number[][] = [];
+      for (let i = 0; i < ftCount; i++) fThreats.push([readI16(), readI16()]);
+      // Objects
+      const foCount = readU16();
+      const fObjects: any[] = [];
+      for (let i = 0; i < foCount; i++) {
+        const ox2 = readI16(), oy2 = readI16(), ow2 = readI16(), oh2 = readI16();
+        const ot = readU8();
+        const hc = readU8(); const cf0 = readI16(), cf1 = readI16();
+        const od: any = [ox2, oy2, ow2, oh2, OBJ_TYPE_REV[ot] || 'block'];
+        if (hc) od.push([cf0, cf1]);
+        fObjects.push(od);
+      }
+      // Floor cut
+      const ffcCount = readU16();
+      const fFloorCut: number[][] = [];
+      for (let i = 0; i < ffcCount; i++) fFloorCut.push([readI16(), readI16()]);
+      floors.push({ level, bounds: { x: bx, y: by, w: bw, h: bh }, w: fWalls, t: fThreats, o: fObjects, fc: fFloorCut });
+    }
+  }
+
+  return { w, t, e, o, fc, floors } as any;
 }

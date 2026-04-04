@@ -61,10 +61,11 @@ export function updatePathFollowing(op: Operator, dt: number, state: GameState):
     op.reachedEnd = true;
     op.isMoving = false;
     op.position = getPointAtDistance(lut, lut.totalLength);
+    // Snap to exact target angle (not lerp) so stage transitions capture the correct facing
     const last = op.path.waypoints[op.path.waypoints.length - 1];
-    if (last?.facingOverride !== null) op.angle = lerpAngle(op.angle, last.facingOverride!, TURN * dt);
-    else if (last?.lookTarget) op.angle = lerpAngle(op.angle, Math.atan2(last.lookTarget.y - op.position.y, last.lookTarget.x - op.position.x), TURN * dt);
-    else if (op.pieTarget) op.angle = lerpAngle(op.angle, Math.atan2(op.pieTarget.y - op.position.y, op.pieTarget.x - op.position.x), TURN * dt);
+    if (last?.facingOverride !== null) op.angle = last.facingOverride!;
+    else if (last?.lookTarget) op.angle = Math.atan2(last.lookTarget.y - op.position.y, last.lookTarget.x - op.position.x);
+    else if (op.pieTarget) op.angle = Math.atan2(op.pieTarget.y - op.position.y, op.pieTarget.x - op.position.x);
     return true;
   }
 
@@ -78,7 +79,12 @@ export function updatePathFollowing(op: Operator, dt: number, state: GameState):
       const wd = (ni / (wc - 1)) * lut.totalLength;
       if (op.distanceTraveled >= wd - 5) {
         op.currentWaypointIndex = ni;
-        if (op.path.waypoints[ni]?.hold) { op.isHolding = true; op.distanceTraveled = wd; }
+        // Floor transition: update operator's floor when reaching a waypoint on a different floor
+        const wp = op.path.waypoints[ni];
+        if (wp && wp.floorLevel !== undefined && wp.floorLevel !== op.currentFloor) {
+          op.currentFloor = wp.floorLevel;
+        }
+        if (wp?.hold) { op.isHolding = true; op.distanceTraveled = wd; }
       }
     }
   }
