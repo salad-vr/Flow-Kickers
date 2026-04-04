@@ -2,6 +2,35 @@ import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 import type { GameState } from '../types';
 import { renderGame, getCanvas } from '../rendering/renderer';
 import { updateSimulation, resetSimulation } from '../core/simulation';
+import { rebuildPathLUT } from '../operator/pathFollower';
+
+/** Load a stage's data onto operators for execution */
+function loadStageForExport(state: GameState, stageIdx: number) {
+  const stage = state.stages[stageIdx];
+  if (!stage) return;
+  state.elapsedTime = 0;
+  state.goCodesTriggered = { A: false, B: false, C: false };
+  for (const snap of stage.operatorStates) {
+    const op = state.operators.find(o => o.id === snap.opId);
+    if (!op) continue;
+    op.position = { x: snap.startPosition.x, y: snap.startPosition.y };
+    op.startPosition = { x: snap.startPosition.x, y: snap.startPosition.y };
+    op.angle = snap.startAngle;
+    op.startAngle = snap.startAngle;
+    op.path.waypoints = JSON.parse(JSON.stringify(snap.waypoints));
+    op.tempo = snap.tempo;
+    op.distanceTraveled = 0;
+    op.currentWaypointIndex = 0;
+    op.isHolding = false;
+    op.isMoving = false;
+    op.reachedEnd = false;
+    if (op.smoothPosition) op.smoothPosition = { x: op.position.x, y: op.position.y };
+    rebuildPathLUT(op);
+  }
+  state.mode = 'executing';
+  state.goCodesTriggered.A = true;
+  state.executingStageIndex = stageIdx;
+}
 
 export async function exportGIF(
   state: GameState,
@@ -9,80 +38,71 @@ export async function exportGIF(
 ): Promise<Blob> {
   const canvas = getCanvas();
   const w = canvas.width, h = canvas.height;
-
   const offscreen = document.createElement('canvas');
   offscreen.width = w; offscreen.height = h;
   const offCtx = offscreen.getContext('2d')!;
-
   const gif = GIFEncoder();
-  const fps = 20;
-  const dt = 1 / fps;
-  const maxFrames = fps * 30; // hard safety cap
-  const delay = Math.floor(1000 / fps);
-  const tailFrames = 5; // 0.25 seconds after last route finishes
+  const fps = 20, dt = 1 / fps, delay = Math.floor(1000 / fps);
+  const maxFramesPerStage = fps * 20; // safety cap per stage
+  const tailFrames = 5;
 
   state.exportingGif = true;
 
-  // ---- Palette: quick sample from frame 0 + one mid-simulation frame ----
-  resetSimulation(state);
-  state.mode = 'executing';
-  state.goCodesTriggered.A = true;
+  const numStages = state.stages.length;
+  if (numStages === 0) { state.exportingGif = false; throw new Error('No stages to export'); }
 
-  renderGame(canvas, state);
-  offCtx.drawImage(canvas, 0, 0, w, h);
-  const sample0 = offCtx.getImageData(0, 0, w, h).data;
-
-  // Advance 1 second for a second color sample
-  for (let i = 0; i < fps; i++) updateSimulation(state, dt);
-  renderGame(canvas, state);
-  offCtx.drawImage(canvas, 0, 0, w, h);
-  const sample1 = offCtx.getImageData(0, 0, w, h).data;
-
-  const combined = new Uint8ClampedArray(sample0.length + sample1.length);
-  combined.set(sample0, 0);
-  combined.set(sample1, sample0.length);
+  // ---- Build palette from samples across stages ----
+  const samples: Uint8ClampedArray[] = [];
+  for (let si = 0; si < numStages; si++) {
+    loadStageForExport(state, si);
+    renderGame(canvas, state);
+    offCtx.drawImage(canvas, 0, 0, w, h);
+    samples.push(offCtx.getImageData(0, 0, w, h).data);
+    // Advance a bit for color variety
+    for (let i = 0; i < fps; i++) updateSimulation(state, dt);
+    renderGame(canvas, state);
+    offCtx.drawImage(canvas, 0, 0, w, h);
+    samples.push(offCtx.getImageData(0, 0, w, h).data);
+  }
+  const totalLen = samples.reduce((a, s) => a + s.length, 0);
+  const combined = new Uint8ClampedArray(totalLen);
+  let offset = 0;
+  for (const s of samples) { combined.set(s, offset); offset += s.length; }
   const palette = quantize(combined, 256);
 
-  // ---- Record ----
-  resetSimulation(state);
-  state.mode = 'executing';
-  state.goCodesTriggered.A = true;
+  // ---- Record all stages sequentially ----
+  let totalFrames = 0;
+  const estTotalFrames = numStages * fps * 5; // rough estimate for progress
 
-  let frame = 0;
-  let tailCount = -1; // -1 = routes still running
+  for (let si = 0; si < numStages; si++) {
+    loadStageForExport(state, si);
 
-  // Frame 0: operators at start positions
-  renderGame(canvas, state);
-  offCtx.drawImage(canvas, 0, 0, w, h);
-  gif.writeFrame(applyPalette(offCtx.getImageData(0, 0, w, h).data, palette), w, h, { palette, delay });
-  frame++;
-  if (onProgress) onProgress(0);
-
-  while (frame < maxFrames) {
-    updateSimulation(state, dt);
+    // Frame 0 of this stage
     renderGame(canvas, state);
     offCtx.drawImage(canvas, 0, 0, w, h);
     gif.writeFrame(applyPalette(offCtx.getImageData(0, 0, w, h).data, palette), w, h, { palette, delay });
-    frame++;
+    totalFrames++;
 
-    // Once every operator's route is done, start the tail countdown
-    const allRoutesFinished = state.operators.every(
-      o => o.reachedEnd || o.path.waypoints.length === 0 || !o.deployed,
-    );
+    let stageFrames = 0;
+    let tailCount = -1;
 
-    if (allRoutesFinished && tailCount < 0) {
-      tailCount = 0; // start counting
+    while (stageFrames < maxFramesPerStage) {
+      updateSimulation(state, dt);
+      renderGame(canvas, state);
+      offCtx.drawImage(canvas, 0, 0, w, h);
+      gif.writeFrame(applyPalette(offCtx.getImageData(0, 0, w, h).data, palette), w, h, { palette, delay });
+      stageFrames++;
+      totalFrames++;
+
+      const allDone = state.operators.every(
+        o => o.reachedEnd || o.path.waypoints.length === 0 || !o.deployed,
+      );
+      if (allDone && tailCount < 0) tailCount = 0;
+      if (tailCount >= 0) { tailCount++; if (tailCount >= tailFrames) break; }
+
+      if (onProgress) onProgress(Math.min(0.99, totalFrames / estTotalFrames));
+      if (stageFrames % 4 === 0) await new Promise(r => setTimeout(r, 0));
     }
-
-    if (tailCount >= 0) {
-      tailCount++;
-      if (tailCount >= tailFrames) break;
-    }
-
-    if (onProgress) onProgress(Math.min(0.99, frame / (frame + 10)));
-
-    // Yield every 4 frames so UI stays responsive
-    if (frame % 4 === 0) await new Promise(r => setTimeout(r, 0));
   }
 
   gif.finish();
