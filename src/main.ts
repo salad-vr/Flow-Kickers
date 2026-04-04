@@ -806,7 +806,7 @@ function handleInput() {
   if (inter.type === 'spinning_direction') {
     const op = state.operators.find(o => o.id === inter.opId);
     if (op) {
-      // Continuously set facing toward mouse while any button is held or moving
+      // Continuously set facing toward mouse (tracks without clicking)
       const dx = worldMouse.x - op.position.x;
       const dy = worldMouse.y - op.position.y;
       if (dx * dx + dy * dy > 16) {
@@ -814,9 +814,15 @@ function handleInput() {
         op.startAngle = op.angle;
       }
     }
-    // Exit on click (after the initial menu click that started this)
-    if (input.justPressed || input.rightJustPressed) {
+    // Click to confirm and exit direction mode
+    if (input.justPressed) {
       state.interaction = { type: 'idle' };
+      return;
+    }
+    // Right-click also exits
+    if (input.rightJustPressed) {
+      state.interaction = { type: 'idle' };
+      return;
     }
     return;
   }
