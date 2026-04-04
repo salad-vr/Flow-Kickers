@@ -765,28 +765,86 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
     drawHudBtn(ctx, 130, by, 50, 26, 'SAVE', '#55aa66', hov === 'save_progress');
   }
 
-  // ---- Center: Stage indicators (numbered, bigger) ----
+  // ---- Center: Stage indicators (clickable pill buttons) ----
   if (totalStages > 0) {
-    const dotSpacing = 28;
-    const dotsW = (totalStages + 1) * dotSpacing;
-    const dotsStartX = W / 2 - dotsW / 2 + dotSpacing / 2;
+    const pillW = 26, pillH = 20, pillGap = 4;
+    const editBtnW = 46;
+    const viewIdx = state.viewingStageIndex;
+    const hasSelection = viewIdx >= 0 && viewIdx < totalStages && mode === 'planning';
+    const totalPills = totalStages + (mode === 'planning' ? 1 : 0);
+    const totalW = totalPills * (pillW + pillGap) - pillGap + (hasSelection ? editBtnW + pillGap + 4 : 0);
+    const startX = W / 2 - totalW / 2;
+    const pillY = by + (26 - pillH) / 2;
+
     for (let i = 0; i < totalStages; i++) {
-      const dx = dotsStartX + i * dotSpacing;
-      const active = state.executingStageIndex === i;
-      ctx.fillStyle = active ? C.accent : C.hudBorder;
-      ctx.font = active ? 'bold 12px monospace' : '11px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(String(i + 1), dx, cy);
-      if (active) { ctx.fillStyle = C.accent; ctx.fillRect(dx - 8, cy + 8, 16, 2); }
+      const px = startX + i * (pillW + pillGap);
+      const executing = state.executingStageIndex === i;
+      const selected = viewIdx === i && mode === 'planning';
+      const isHov = hov === `stage_${i}`;
+
+      // Pill background
+      ctx.beginPath();
+      ctx.roundRect(px, pillY, pillW, pillH, 4);
+      if (selected) {
+        ctx.fillStyle = 'rgba(85,170,102,0.25)';
+      } else if (executing) {
+        ctx.fillStyle = 'rgba(30,60,90,0.95)';
+      } else if (isHov) {
+        ctx.fillStyle = 'rgba(40,60,80,0.9)';
+      } else {
+        ctx.fillStyle = 'rgba(18,30,48,0.85)';
+      }
+      ctx.fill();
+
+      // Border
+      ctx.strokeStyle = selected ? '#55aa66' : executing ? C.accent : isHov ? C.hudText : C.hudBorder;
+      ctx.lineWidth = selected ? 1.5 : 1;
+      ctx.stroke();
+
+      // Number
+      ctx.fillStyle = selected ? '#55aa66' : executing ? C.accent : isHov ? C.hudBright : C.hudText;
+      ctx.font = (executing || selected) ? 'bold 10px monospace' : '10px monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(i + 1), px + pillW / 2, pillY + pillH / 2);
+
+      // Active underline for executing stage
+      if (executing) {
+        ctx.fillStyle = C.accent;
+        ctx.fillRect(px + 4, pillY + pillH - 2, pillW - 8, 2);
+      }
     }
-    // Current planning stage (dotted)
-    const cx2 = dotsStartX + totalStages * dotSpacing;
-    ctx.fillStyle = mode === 'planning' ? C.accent : C.hudBorder;
-    ctx.font = '11px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(String(totalStages + 1), cx2, cy);
-    ctx.strokeStyle = C.accent; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
-    ctx.beginPath(); ctx.arc(cx2, cy, 11, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([]);
+
+    // Current planning stage (dotted outline)
+    if (mode === 'planning') {
+      const px = startX + totalStages * (pillW + pillGap);
+      ctx.beginPath();
+      ctx.roundRect(px, pillY, pillW, pillH, 4);
+      ctx.fillStyle = 'rgba(18,30,48,0.6)';
+      ctx.fill();
+      ctx.strokeStyle = C.accent; ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = C.accent;
+      ctx.font = '10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(totalStages + 1), px + pillW / 2, pillY + pillH / 2);
+    }
+
+    // EDIT button (appears when a stage is selected in planning mode)
+    if (hasSelection) {
+      const editX = startX + totalPills * (pillW + pillGap) + 4;
+      const isEditHov = hov === 'edit_stage';
+      ctx.beginPath();
+      ctx.roundRect(editX, pillY, editBtnW, pillH, 4);
+      ctx.fillStyle = isEditHov ? 'rgba(85,170,102,0.3)' : 'rgba(18,30,48,0.85)';
+      ctx.fill();
+      ctx.strokeStyle = isEditHov ? '#55aa66' : C.hudBorder;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = isEditHov ? '#55aa66' : C.hudText;
+      ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('EDIT', editX + editBtnW / 2, pillY + pillH / 2);
+    }
   }
 
   // ---- Right block: SAVE STAGE + GO + RESET + REPLAY + SHARE ----

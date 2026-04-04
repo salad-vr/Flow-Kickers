@@ -49,7 +49,7 @@ export interface NodePopup { opId: number; wpIdx: number; position: Vec2; }
 
 export interface Camera { x: number; y: number; zoom: number; }
 
-export type HudBtn = 'go' | 'reset' | 'menu' | 'share' | 'save_stage' | 'replay' | 'clear_level' | 'save_progress' | null;
+export type HudBtn = 'go' | 'reset' | 'menu' | 'share' | 'save_stage' | 'replay' | 'clear_level' | 'save_progress' | 'edit_stage' | `stage_${number}` | null;
 
 /** A snapshot of all operator paths + start positions for one phase of the plan */
 export interface Stage {

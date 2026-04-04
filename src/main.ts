@@ -1429,6 +1429,51 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+/** Edit a previously saved stage: reset to its start, delete it and all future stages */
+function editStage() {
+  const idx = state.viewingStageIndex;
+  if (idx < 0 || idx >= state.stages.length) return;
+  if (state.mode !== 'planning') return;
+
+  const targetStage = state.stages[idx];
+
+  // Restore operators to the START positions of the selected stage
+  for (const snap of targetStage.operatorStates) {
+    const op = state.operators.find(o => o.id === snap.opId);
+    if (!op) continue;
+    op.position = { x: snap.startPosition.x, y: snap.startPosition.y };
+    op.startPosition = { x: snap.startPosition.x, y: snap.startPosition.y };
+    op.angle = snap.startAngle;
+    op.startAngle = snap.startAngle;
+    op.path.waypoints = [];
+    op.path.splineLUT = null;
+    op.pieTarget = null;
+    op.distanceTraveled = 0;
+    op.currentWaypointIndex = 0;
+    op.isHolding = false;
+    op.isMoving = false;
+    op.reachedEnd = false;
+    if (op.smoothPosition) op.smoothPosition = { x: op.position.x, y: op.position.y };
+  }
+
+  // Delete this stage and all future stages
+  state.stages.splice(idx);
+  state.currentStageIndex = state.stages.length;
+  state.viewingStageIndex = -1;
+  state.preGoSnapshot = null;
+  state.executingStageIndex = -1;
+  state.isReplaying = false;
+  state.stageJustCompleted = false;
+
+  // Clean up UI
+  state.popup = null;
+  state.radialMenu = null;
+  state.pendingNode = null;
+  state.speedSlider = null;
+  state.selectedOpId = null;
+  state.interaction = { type: 'idle' };
+}
+
 /** Save current paths as a stage, then prepare for next stage planning */
 function saveStage() {
   // Case 1: After execution just completed (stageJustCompleted glow prompt)
@@ -1561,6 +1606,7 @@ function doGo() {
   state.speedSlider = null;
   state.interaction = { type: 'idle' };
   state.stageJustCompleted = false;
+  state.viewingStageIndex = -1;
 
   // Start executing from stage 0
   state.executingStageIndex = 0;
@@ -2016,6 +2062,25 @@ function handleInput() {
     reset: { x: rightBlockX + 186, y: btnY, w: 56, h: 26 },
     replay: { x: rightBlockX + 250, y: btnY, w: 60, h: 26 },
   };
+  // Dynamic stage pill buttons (must match renderer layout)
+  const totalStages = state.stages.length;
+  if (totalStages > 0) {
+    const pillW = 26, pillH = 20, pillGap = 4;
+    const editBtnW = 46;
+    const viewIdx = state.viewingStageIndex;
+    const hasSelection = viewIdx >= 0 && viewIdx < totalStages && state.mode === 'planning';
+    const totalPills = totalStages + (state.mode === 'planning' ? 1 : 0);
+    const totalW = totalPills * (pillW + pillGap) - pillGap + (hasSelection ? editBtnW + pillGap + 4 : 0);
+    const startX = W / 2 - totalW / 2;
+    const pillY = btnY + (26 - pillH) / 2;
+    for (let i = 0; i < totalStages; i++) {
+      hudBtns[`stage_${i}`] = { x: startX + i * (pillW + pillGap), y: pillY, w: pillW, h: pillH };
+    }
+    if (hasSelection) {
+      const editX = startX + totalPills * (pillW + pillGap) + 4;
+      hudBtns['edit_stage'] = { x: editX, y: pillY, w: editBtnW, h: pillH };
+    }
+  }
   if (input.mousePos.y > hudBarY) {
     canvas.style.cursor = 'default';
     if (!shareHit) state.hoveredHudBtn = null;
@@ -2042,6 +2107,14 @@ function handleInput() {
     else if (h === 'menu') show('menu');
     else if (h === 'replay') doReplay();
     else if (h === 'save_progress') { saveProgress(); showSaveConfirmation(); }
+    else if (h === 'edit_stage') { editStage(); }
+    else if (h && h.startsWith('stage_')) {
+      const idx = parseInt(h.split('_')[1]);
+      if (state.mode === 'planning') {
+        // Toggle selection: click again to deselect
+        state.viewingStageIndex = state.viewingStageIndex === idx ? -1 : idx;
+      }
+    }
     return;
   }
 
