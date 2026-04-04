@@ -1,4 +1,4 @@
-import type { GameState, Operator, Room, WallSegment, ThreatMarker, NodePopup, Camera, HudBtn, SharePanelBtn, SpeedSliderState } from '../types';
+import type { GameState, Operator, Room, WallSegment, ThreatMarker, NodePopup, Camera, HudBtn, SharePanelBtn, SpeedSliderState, RadialMenu, RadialMenuItem } from '../types';
 import { WALL_W, OP_R, THREAT_R, GRID, DOOR_W, C, NODE_R, DEPLOY_PANEL_H, DEPLOY_OP_SPACING } from '../types';
 import { getWallsForCollision } from '../room/room';
 import { computeOperatorFOV } from '../operator/visibility';
@@ -91,7 +91,7 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
     drawPieTarget(ctx, op, grey);
   }
 
-  // Operators (deployed ones + the one currently being dragged from deploy panel)
+   // Operators (deployed ones + the one currently being dragged from deploy panel)
   const deployingOpId = state.interaction.type === 'deploying_op' ? state.interaction.opId : -1;
   const isExec = state.mode === 'executing' || state.mode === 'paused';
   for (const op of state.operators) {
@@ -99,6 +99,17 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
     const grey = sid !== null && op.id !== sid;
     const isDragging = op.id === deployingOpId;
     drawOp(ctx, op, op.id === sid || isDragging, grey, isDragging, isExec);
+  }
+
+  // Selection glow ring (world-space)
+  if (sid !== null && state.mode === 'planning') {
+    const selOp = state.operators.find(o => o.id === sid && o.deployed);
+    if (selOp) drawSelectionGlow(ctx, selOp);
+  }
+
+  // Radial menu (world-space)
+  if (state.radialMenu && state.mode === 'planning') {
+    drawRadialMenu(ctx, state.radialMenu, state);
   }
 
   // ---- Restore from camera transform (back to screen space) ----
@@ -380,6 +391,183 @@ function drawOp(ctx: CanvasRenderingContext2D, op: Operator, selected: boolean, 
   ctx.restore();
 }
 
+// ---- Radial Menu Constants (must match main.ts) ----
+const RADIAL_R = 28;
+const RADIAL_ICON_R = 10;
+
+const OP_RADIAL_ITEMS: RadialMenuItem[] = [
+  { id: 'direction', icon: 'direction', label: 'Direction' },
+  { id: 'pie',       icon: 'pie',       label: 'Pie' },
+  { id: 'route',     icon: 'route',     label: 'Route' },
+];
+const NODE_RADIAL_ITEMS: RadialMenuItem[] = [
+  { id: 'direction', icon: 'direction', label: 'Direction' },
+  { id: 'delete',    icon: 'delete',    label: 'Delete' },
+  { id: 'speed',     icon: 'speed',     label: 'Speed' },
+  { id: 'hold',      icon: 'hold',      label: 'Hold' },
+];
+
+function getRadialItems(wpIdx: number): RadialMenuItem[] {
+  return wpIdx < 0 ? OP_RADIAL_ITEMS : NODE_RADIAL_ITEMS;
+}
+
+function getRadialIconPos(center: Vec2, idx: number, total: number): Vec2 {
+  const a = -Math.PI / 2 + (idx / total) * Math.PI * 2;
+  return { x: center.x + Math.cos(a) * RADIAL_R, y: center.y + Math.sin(a) * RADIAL_R };
+}
+
+function drawSelectionGlow(ctx: CanvasRenderingContext2D, op: Operator) {
+  const p = op.position;
+  const r = OP_R + 8;
+  ctx.save();
+  // Animated pulsing glow
+  const t = performance.now() / 1000;
+  const pulse = 0.6 + 0.4 * Math.sin(t * 3);
+
+  // Outer glow
+  ctx.strokeStyle = op.color;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.25 * pulse;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r + 4, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Main ring
+  ctx.globalAlpha = 0.5 + 0.2 * pulse;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawRadialIcon(ctx: CanvasRenderingContext2D, cx: number, cy: number, icon: string, hovered: boolean, color: string) {
+  const r = RADIAL_ICON_R;
+
+  // Background circle
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = hovered ? 'rgba(40,65,90,0.95)' : 'rgba(17,29,51,0.92)';
+  ctx.fill();
+  ctx.strokeStyle = hovered ? color : C.popupBorder;
+  ctx.lineWidth = hovered ? 1.5 : 1;
+  ctx.stroke();
+
+  // Icon drawing
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.strokeStyle = hovered ? '#fff' : C.hudBright;
+  ctx.fillStyle = hovered ? '#fff' : C.hudBright;
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (icon === 'direction') {
+    // Arrow pointing right
+    ctx.beginPath();
+    ctx.moveTo(-4, 0); ctx.lineTo(4, 0);
+    ctx.moveTo(1, -3); ctx.lineTo(4, 0); ctx.lineTo(1, 3);
+    ctx.stroke();
+  } else if (icon === 'pie') {
+    // Pizza slice triangle
+    ctx.beginPath();
+    ctx.moveTo(0, -4);
+    ctx.lineTo(-4, 4);
+    ctx.lineTo(4, 4);
+    ctx.closePath();
+    ctx.fillStyle = hovered ? '#e8c84a' : '#c8a83a';
+    ctx.fill();
+    ctx.strokeStyle = hovered ? '#d4a24a' : '#a0822a';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Pepperoni dot
+    ctx.fillStyle = '#cc4433';
+    ctx.beginPath(); ctx.arc(0, 1, 1.5, 0, Math.PI * 2); ctx.fill();
+  } else if (icon === 'route') {
+    // Plus sign
+    ctx.beginPath();
+    ctx.moveTo(0, -4); ctx.lineTo(0, 4);
+    ctx.moveTo(-4, 0); ctx.lineTo(4, 0);
+    ctx.stroke();
+  } else if (icon === 'speed') {
+    // Speedometer/gauge lines
+    ctx.beginPath();
+    ctx.arc(0, 1, 4, Math.PI, 0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, 1); ctx.lineTo(2, -2);
+    ctx.stroke();
+  } else if (icon === 'delete') {
+    // X mark
+    ctx.beginPath();
+    ctx.moveTo(-3, -3); ctx.lineTo(3, 3);
+    ctx.moveTo(3, -3); ctx.lineTo(-3, 3);
+    ctx.stroke();
+  } else if (icon === 'hold') {
+    // Pause bars
+    ctx.fillRect(-3, -3, 2, 6);
+    ctx.fillRect(1, -3, 2, 6);
+  }
+
+  ctx.restore();
+}
+
+function drawRadialMenu(ctx: CanvasRenderingContext2D, menu: RadialMenu, state: GameState) {
+  const items = getRadialItems(menu.wpIdx);
+  const t = menu.animT;
+  const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+
+  const op = state.operators.find(o => o.id === menu.opId);
+  const color = op ? op.color : C.accent;
+
+  // Connecting ring (faint)
+  ctx.save();
+  ctx.globalAlpha = 0.2 * eased;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.arc(menu.center.x, menu.center.y, RADIAL_R, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  // Draw each icon
+  for (let i = 0; i < items.length; i++) {
+    const pos = getRadialIconPos(menu.center, i, items.length);
+    // Animate: icons slide out from center
+    const ix = menu.center.x + (pos.x - menu.center.x) * eased;
+    const iy = menu.center.y + (pos.y - menu.center.y) * eased;
+    const hovered = i === menu.hoveredIdx;
+
+    ctx.globalAlpha = eased;
+    drawRadialIcon(ctx, ix, iy, items[i].icon, hovered, color);
+
+    // Hover tooltip label
+    if (hovered && eased > 0.5) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = C.popupBg;
+      ctx.font = 'bold 8px monospace';
+      const label = items[i].label;
+      const tw = ctx.measureText(label).width;
+      const lx = ix - tw / 2 - 4, ly = iy - RADIAL_ICON_R - 14;
+      ctx.beginPath();
+      ctx.roundRect(lx, ly, tw + 8, 13, 3);
+      ctx.fill();
+      ctx.strokeStyle = C.popupBorder; ctx.lineWidth = 0.5;
+      ctx.stroke();
+      ctx.fillStyle = C.hudBright;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, ix, ly + 6.5);
+    }
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
 function drawDeployPanel(ctx: CanvasRenderingContext2D, state: GameState, H: number) {
   if (state.mode !== 'planning') return;
   const undeployed = state.operators.filter(o => !o.deployed);
@@ -443,29 +631,59 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
 
   ctx.font = 'bold 11px monospace'; ctx.textBaseline = 'middle';
   const cy = barY + barH / 2;
+  const by = barY + 5;
+  const mode = state.mode;
 
-  // Left: room name
-  ctx.fillStyle = C.hudBright; ctx.textAlign = 'left';
-  ctx.fillText(state.room.name.toUpperCase(), 12, cy);
+  // Left: MENU + SAVE STAGE
+  drawHudBtn(ctx, 8, by, 56, 26, 'MENU', C.hudText, hov === 'menu');
+  // Only show SAVE STAGE in planning mode
+  if (mode === 'planning') {
+    const stageLabel = state.stages.length === 0 ? 'SAVE STAGE' : `SAVE STAGE ${state.stages.length + 1}`;
+    drawHudBtn(ctx, 72, by, 90, 26, stageLabel, C.accent, hov === 'save_stage');
+  }
+
+  // Stage indicators (small dots showing saved stages)
+  if (state.stages.length > 0) {
+    const dotStartX = 170;
+    for (let i = 0; i < state.stages.length; i++) {
+      const dx = dotStartX + i * 16;
+      const active = state.executingStageIndex === i;
+      ctx.fillStyle = active ? C.accent : C.hudBorder;
+      ctx.beginPath(); ctx.arc(dx, cy, active ? 5 : 3, 0, Math.PI * 2); ctx.fill();
+      if (active) {
+        ctx.strokeStyle = C.accent; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(dx, cy, 7, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+    // Current stage (being planned or executing)
+    const cx2 = dotStartX + state.stages.length * 16;
+    ctx.fillStyle = mode === 'planning' ? C.accent : C.hudBorder;
+    ctx.beginPath(); ctx.arc(cx2, cy, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = C.accent; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
+    ctx.beginPath(); ctx.arc(cx2, cy, 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
 
   // Center: GO / PAUSE / RESET
-  ctx.textAlign = 'center';
-  const mode = state.mode;
   if (mode === 'planning') {
-    drawHudBtn(ctx, W / 2 - 40, barY + 5, 80, 26, 'GO!', C.accent, hov === 'go');
+    drawHudBtn(ctx, W / 2 - 40, by, 80, 26, 'GO!', C.accent, hov === 'go');
   } else if (mode === 'executing') {
-    drawHudBtn(ctx, W / 2 - 40, barY + 5, 80, 26, 'PAUSE', C.hudText, hov === 'go');
+    drawHudBtn(ctx, W / 2 - 40, by, 80, 26, 'PAUSE', C.hudText, hov === 'go');
   } else {
-    drawHudBtn(ctx, W / 2 - 40, barY + 5, 80, 26, 'RESUME', C.accent, hov === 'go');
+    drawHudBtn(ctx, W / 2 - 40, by, 80, 26, 'RESUME', C.accent, hov === 'go');
   }
-  drawHudBtn(ctx, W / 2 + 50, barY + 5, 60, 26, 'RESET', C.hudText, hov === 'reset');
-  drawHudBtn(ctx, W / 2 - 110, barY + 5, 60, 26, 'MENU', C.hudText, hov === 'menu');
+  drawHudBtn(ctx, W / 2 + 50, by, 60, 26, 'RESET', C.hudText, hov === 'reset');
+
+  // REPLAY (only show if there are saved stages and not currently planning first stage)
+  if (state.stages.length > 0) {
+    drawHudBtn(ctx, W / 2 + 118, by, 66, 26, 'REPLAY', C.accent, hov === 'replay');
+  }
 
   // Right: timer + SHARE
   const m = Math.floor(state.elapsedTime / 60), s = Math.floor(state.elapsedTime % 60);
   ctx.fillStyle = C.accent; ctx.textAlign = 'right'; ctx.font = 'bold 12px monospace';
   ctx.fillText(`${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`, W - 78, cy);
-  drawHudBtn(ctx, W - 64, barY + 5, 56, 26, 'SHARE', C.hudText, hov === 'share');
+  drawHudBtn(ctx, W - 64, by, 56, 26, 'SHARE', C.hudText, hov === 'share');
 
   // Mode indicator top-right
   ctx.fillStyle = C.hud; ctx.fillRect(W - 110, 8, 102, 22);

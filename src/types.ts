@@ -48,7 +48,19 @@ export interface NodePopup { opId: number; wpIdx: number; position: Vec2; }
 
 export interface Camera { x: number; y: number; zoom: number; }
 
-export type HudBtn = 'go' | 'reset' | 'menu' | 'share' | null;
+export type HudBtn = 'go' | 'reset' | 'menu' | 'share' | 'save_stage' | 'replay' | null;
+
+/** A snapshot of all operator paths + start positions for one phase of the plan */
+export interface Stage {
+  /** Per-operator snapshot: startPos, startAngle, waypoints */
+  operatorStates: {
+    opId: number;
+    startPosition: Vec2;
+    startAngle: number;
+    waypoints: Waypoint[];
+    tempo: number;
+  }[];
+}
 
 export interface SharePanelState {
   open: boolean;
@@ -63,6 +75,25 @@ export type SharePanelBtn = 'close' | 'copy_code' | 'export_gif' | 'download_gif
 export interface PendingNode {
   opId: number;
   wpIdx: number; // index of the waypoint that was just placed
+}
+
+export interface RadialMenuItem {
+  id: string;
+  icon: 'direction' | 'pie' | 'route' | 'speed' | 'delete' | 'hold' | 'clear';
+  label: string;
+}
+
+export interface RadialMenu {
+  /** World-space center position */
+  center: Vec2;
+  /** The operator this menu belongs to */
+  opId: number;
+  /** If >= 0, this is a node menu at this waypoint index. If -1, operator menu */
+  wpIdx: number;
+  /** Index of hovered item, or -1 */
+  hoveredIdx: number;
+  /** Animation progress 0..1 for open animation */
+  animT: number;
 }
 
 export interface SpeedSliderState {
@@ -94,6 +125,16 @@ export interface GameState {
   speedSlider: SpeedSliderState | null;
   /** True during GIF export rendering - hides HUD, shows prominent watermark */
   exportingGif: boolean;
+  /** Radial menu (replaces old popup for operator/node menus) */
+  radialMenu: RadialMenu | null;
+  /** Saved stages (completed planning phases) */
+  stages: Stage[];
+  /** Which stage is currently being planned (stages.length = next one) */
+  currentStageIndex: number;
+  /** Which stage is being executed during playback (-1 = not replaying) */
+  executingStageIndex: number;
+  /** True when replaying all stages sequentially */
+  isReplaying: boolean;
 }
 
 export function makeWaypoint(pos: Vec2): Waypoint {

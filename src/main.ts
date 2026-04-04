@@ -1,5 +1,5 @@
 import './style.css';
-import type { GameState, Operator, Interaction, NodePopup, Room, SharePanelBtn, PendingNode, SpeedSliderState } from './types';
+import type { GameState, Operator, Interaction, NodePopup, Room, SharePanelBtn, PendingNode, SpeedSliderState, RadialMenu, RadialMenuItem, HudBtn } from './types';
 import type { Vec2 } from './math/vec2';
 import { C, OP_R, NODE_R, DEPLOY_PANEL_H, DEPLOY_OP_SPACING, GRID, DOOR_W, WALL_W, makeWaypoint } from './types';
 import { startGameLoop } from './core/gameLoop';
@@ -166,6 +166,11 @@ const state: GameState = {
   pendingNode: null,
   speedSlider: null,
   exportingGif: false,
+  radialMenu: null,
+  stages: [],
+  currentStageIndex: 0,
+  executingStageIndex: -1,
+  isReplaying: false,
 };
 
 // ---- Build state ----
@@ -475,8 +480,13 @@ function startMission() {
   state.goCodesTriggered = { A: false, B: false, C: false };
   state.interaction = { type: 'idle' };
   state.popup = null;
+  state.radialMenu = null;
   state.pendingNode = null;
   state.speedSlider = null;
+  state.stages = [];
+  state.currentStageIndex = 0;
+  state.executingStageIndex = -1;
+  state.isReplaying = false;
   resetOperatorId();
   for (let i = 0; i < selOpCount; i++) {
     state.operators.push(createOperator(i));
@@ -505,6 +515,7 @@ function startCustomMission() {
   state.goCodesTriggered = { A: false, B: false, C: false };
   state.interaction = { type: 'idle' };
   state.popup = null;
+  state.radialMenu = null;
   state.pendingNode = null;
   state.speedSlider = null;
   resetOperatorId();
@@ -567,6 +578,7 @@ window.addEventListener('keydown', (e) => {
     case 'r': case 'R': doReset(); break;
     case 'Escape':
       state.popup = null;
+      state.radialMenu = null;
       state.pendingNode = null;
       state.speedSlider = null;
       if (state.interaction.type === 'placing_waypoints' || state.interaction.type === 'placing_pie' || state.interaction.type === 'speed_slider') state.interaction = { type: 'idle' };
@@ -576,21 +588,146 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+/** Save current paths as a stage, then prepare for next stage planning */
+function saveStage() {
+  if (state.mode !== 'planning') return;
+  const deployed = state.operators.filter(o => o.deployed);
+  if (deployed.length === 0) return;
+  // Only save if at least one operator has a path in this stage
+  if (!deployed.some(o => o.path.waypoints.length >= 2)) return;
+
+  // Snapshot current paths into a stage
+  const stage: import('./types').Stage = {
+    operatorStates: deployed.map(op => ({
+      opId: op.id,
+      startPosition: { x: op.position.x, y: op.position.y },
+      startAngle: op.angle,
+      waypoints: JSON.parse(JSON.stringify(op.path.waypoints)),
+      tempo: op.tempo,
+    })),
+  };
+  state.stages.push(stage);
+  state.currentStageIndex = state.stages.length;
+
+  // Move operators to where their paths end (start of next stage)
+  for (const op of deployed) {
+    if (op.path.waypoints.length >= 2) {
+      const lastWp = op.path.waypoints[op.path.waypoints.length - 1];
+      op.position = { x: lastWp.position.x, y: lastWp.position.y };
+      op.startPosition = { x: lastWp.position.x, y: lastWp.position.y };
+      if (lastWp.facingOverride !== null) {
+        op.angle = lastWp.facingOverride;
+        op.startAngle = lastWp.facingOverride;
+      }
+    }
+    // Clear path for next stage planning
+    op.path.waypoints = [];
+    op.path.splineLUT = null;
+  }
+
+  // Clear UI state
+  state.popup = null;
+  state.radialMenu = null;
+  state.pendingNode = null;
+  state.speedSlider = null;
+  state.selectedOpId = null;
+  state.interaction = { type: 'idle' };
+}
+
+/** Execute: save current paths as final stage if any, then run all stages */
 function doGo() {
   if (state.mode !== 'planning') return;
   const deployed = state.operators.filter(o => o.deployed);
   if (deployed.length === 0) return;
+
+  // Auto-save current paths as a stage if there are any
+  if (deployed.some(o => o.path.waypoints.length >= 2)) {
+    const stage: import('./types').Stage = {
+      operatorStates: deployed.map(op => ({
+        opId: op.id,
+        startPosition: { x: op.position.x, y: op.position.y },
+        startAngle: op.angle,
+        waypoints: JSON.parse(JSON.stringify(op.path.waypoints)),
+        tempo: op.tempo,
+      })),
+    };
+    state.stages.push(stage);
+  }
+
+  if (state.stages.length === 0) return;
+
   state.popup = null;
+  state.radialMenu = null;
   state.pendingNode = null;
   state.speedSlider = null;
   state.interaction = { type: 'idle' };
-  // Initialize smooth positions before execution starts
-  for (const op of state.operators) {
-    if (op.deployed) {
-      op.smoothPosition = { x: op.position.x, y: op.position.y };
-    }
+
+  // Start executing from stage 0
+  state.executingStageIndex = 0;
+  state.isReplaying = false;
+  loadAndExecuteStage(0);
+}
+
+/** Load a stage's paths onto operators and start executing */
+function loadAndExecuteStage(stageIdx: number) {
+  const stage = state.stages[stageIdx];
+  if (!stage) return;
+
+  state.executingStageIndex = stageIdx;
+  state.elapsedTime = 0;
+  state.goCodesTriggered = { A: false, B: false, C: false };
+
+  // Restore operator positions and paths from this stage
+  for (const snap of stage.operatorStates) {
+    const op = state.operators.find(o => o.id === snap.opId);
+    if (!op) continue;
+    op.position = { x: snap.startPosition.x, y: snap.startPosition.y };
+    op.startPosition = { x: snap.startPosition.x, y: snap.startPosition.y };
+    op.angle = snap.startAngle;
+    op.startAngle = snap.startAngle;
+    op.path.waypoints = JSON.parse(JSON.stringify(snap.waypoints));
+    op.tempo = snap.tempo;
+    op.distanceTraveled = 0;
+    op.currentWaypointIndex = 0;
+    op.isHolding = false;
+    op.isMoving = false;
+    op.reachedEnd = false;
+    op.smoothPosition = { x: op.position.x, y: op.position.y };
+    rebuildPathLUT(op);
   }
-  startExecution(state);
+
+  state.mode = 'executing';
+  state.goCodesTriggered.A = true;
+}
+
+/** Check if current stage is done and advance to next */
+function checkStageCompletion() {
+  if (state.mode !== 'executing' || state.executingStageIndex < 0) return;
+  const allDone = state.operators.every(
+    o => !o.deployed || o.reachedEnd || o.path.waypoints.length === 0
+  );
+  if (!allDone) return;
+
+  const nextStage = state.executingStageIndex + 1;
+  if (nextStage < state.stages.length) {
+    // Advance to next stage
+    loadAndExecuteStage(nextStage);
+  } else {
+    // All stages done
+    if (state.isReplaying) {
+      state.mode = 'paused'; // pause at end of replay
+    }
+    // stay in executing/paused - user can reset or replay
+  }
+}
+
+/** Replay all stages from the beginning */
+function doReplay() {
+  if (state.stages.length === 0) return;
+  state.isReplaying = true;
+  state.roomCleared = false;
+  for (const t of state.room.threats) { t.neutralized = false; t.neutralizeTimer = 0; }
+  loadAndExecuteStage(0);
 }
 
 function doReset() {
@@ -599,10 +736,39 @@ function doReset() {
   state.roomCleared = false;
   state.goCodesTriggered = { A: false, B: false, C: false };
   state.popup = null;
+  state.radialMenu = null;
   state.pendingNode = null;
   state.speedSlider = null;
   state.interaction = { type: 'idle' };
-  for (const op of state.operators) if (op.deployed) resetOperator(op);
+  state.executingStageIndex = -1;
+  state.isReplaying = false;
+
+  // Reset operators to stage 0 start positions (or original if no stages)
+  if (state.stages.length > 0) {
+    const stage0 = state.stages[0];
+    for (const snap of stage0.operatorStates) {
+      const op = state.operators.find(o => o.id === snap.opId);
+      if (!op) continue;
+      op.position = { x: snap.startPosition.x, y: snap.startPosition.y };
+      op.startPosition = { x: snap.startPosition.x, y: snap.startPosition.y };
+      op.angle = snap.startAngle;
+      op.startAngle = snap.startAngle;
+    }
+  } else {
+    for (const op of state.operators) if (op.deployed) resetOperator(op);
+  }
+  // Clear all paths and stages
+  for (const op of state.operators) {
+    op.path.waypoints = [];
+    op.path.splineLUT = null;
+    op.distanceTraveled = 0;
+    op.currentWaypointIndex = 0;
+    op.isHolding = false;
+    op.isMoving = false;
+    op.reachedEnd = false;
+  }
+  state.stages = [];
+  state.currentStageIndex = 0;
   for (const t of state.room.threats) { t.neutralized = false; t.neutralizeTimer = 0; }
 }
 
@@ -720,6 +886,43 @@ function hitBtn(mouse: Vec2, x: number, y: number, w: number, h: number): boolea
   return mouse.x >= x && mouse.x <= x + w && mouse.y >= y && mouse.y <= y + h;
 }
 
+// ---- Radial Menu Definitions ----
+const RADIAL_R = 28; // radius of icon ring around center (world-space)
+const RADIAL_ICON_R = 10; // radius of each icon hit area (world-space)
+
+const OP_RADIAL_ITEMS: RadialMenuItem[] = [
+  { id: 'direction', icon: 'direction', label: 'Direction' },
+  { id: 'pie',       icon: 'pie',       label: 'Pie' },
+  { id: 'route',     icon: 'route',     label: 'Route' },
+];
+
+const NODE_RADIAL_ITEMS: RadialMenuItem[] = [
+  { id: 'direction', icon: 'direction', label: 'Direction' },
+  { id: 'delete',    icon: 'delete',    label: 'Delete' },
+  { id: 'speed',     icon: 'speed',     label: 'Speed' },
+  { id: 'hold',      icon: 'hold',      label: 'Hold' },
+];
+
+function getRadialItems(wpIdx: number): RadialMenuItem[] {
+  return wpIdx < 0 ? OP_RADIAL_ITEMS : NODE_RADIAL_ITEMS;
+}
+
+/** Get world-space position of a radial menu icon */
+function getRadialIconPos(center: Vec2, idx: number, total: number): Vec2 {
+  const a = -Math.PI / 2 + (idx / total) * Math.PI * 2;
+  return { x: center.x + Math.cos(a) * RADIAL_R, y: center.y + Math.sin(a) * RADIAL_R };
+}
+
+/** Hit-test radial menu icons in world-space, return index or -1 */
+function hitTestRadialMenu(worldMouse: Vec2, menu: RadialMenu): number {
+  const items = getRadialItems(menu.wpIdx);
+  for (let i = 0; i < items.length; i++) {
+    const p = getRadialIconPos(menu.center, i, items.length);
+    if (distance(worldMouse, p) < RADIAL_ICON_R + 2) return i;
+  }
+  return -1;
+}
+
 // ---- Input ----
 function handleInput() {
   const input = getInput();
@@ -799,13 +1002,21 @@ function handleInput() {
   const hudBarY = canvas.height - 36;
   const W = canvas.width;
   const btnY = hudBarY + 5;
+  // HUD button positions (must match renderer drawHUD exactly)
+  const hudBtns = {
+    menu: { x: 8, y: btnY, w: 56, h: 26 },
+    save_stage: { x: 72, y: btnY, w: 90, h: 26 },
+    go: { x: W / 2 - 40, y: btnY, w: 80, h: 26 },
+    reset: { x: W / 2 + 50, y: btnY, w: 60, h: 26 },
+    replay: { x: W / 2 + 118, y: btnY, w: 66, h: 26 },
+    share: { x: W - 64, y: btnY, w: 56, h: 26 },
+  };
   if (input.mousePos.y > hudBarY) {
     canvas.style.cursor = 'default';
-    if (hitBtn(input.mousePos, W / 2 - 40, btnY, 80, 26)) state.hoveredHudBtn = 'go';
-    else if (hitBtn(input.mousePos, W / 2 + 50, btnY, 60, 26)) state.hoveredHudBtn = 'reset';
-    else if (hitBtn(input.mousePos, W / 2 - 110, btnY, 60, 26)) state.hoveredHudBtn = 'menu';
-    else if (hitBtn(input.mousePos, W - 64, btnY, 56, 26)) state.hoveredHudBtn = 'share';
-    else state.hoveredHudBtn = null;
+    state.hoveredHudBtn = null;
+    for (const [key, b] of Object.entries(hudBtns)) {
+      if (hitBtn(input.mousePos, b.x, b.y, b.w, b.h)) { state.hoveredHudBtn = key as HudBtn; break; }
+    }
     if (state.hoveredHudBtn) canvas.style.cursor = 'pointer';
   } else {
     state.hoveredHudBtn = null;
@@ -814,15 +1025,18 @@ function handleInput() {
 
   // HUD bar button clicks work in ALL modes (including executing)
   if (input.justPressed && input.mousePos.y > hudBarY) {
-    if (hitBtn(input.mousePos, W / 2 - 40, btnY, 80, 26)) {
+    const h = state.hoveredHudBtn;
+    if (h === 'go') {
       if (state.mode === 'planning') doGo();
       else if (state.mode === 'executing') { state.mode = 'paused'; }
       else if (state.mode === 'paused') { state.mode = 'executing'; }
     }
-    else if (hitBtn(input.mousePos, W / 2 + 50, btnY, 60, 26)) doReset();
-    else if (hitBtn(input.mousePos, W / 2 - 110, btnY, 60, 26)) show('menu');
-    else if (hitBtn(input.mousePos, W - 64, btnY, 56, 26)) openSharePanel();
-    return; // always consume clicks in HUD bar
+    else if (h === 'save_stage') saveStage();
+    else if (h === 'reset') doReset();
+    else if (h === 'menu') show('menu');
+    else if (h === 'replay') doReplay();
+    else if (h === 'share') openSharePanel();
+    return;
   }
 
   if (state.mode === 'executing') return;
@@ -870,73 +1084,68 @@ function handleInput() {
     return;
   }
 
-  if (state.popup && input.justPressed) {
-    // Check if clicking a popup menu item
-    const pop = state.popup;
-    const op = state.operators.find(o => o.id === pop.opId);
-    const cam = state.camera;
-    const W = canvas.width, H = canvas.height;
-    const sp = { x: (pop.position.x - cam.x) * cam.zoom + W / 2, y: (pop.position.y - cam.y) * cam.zoom + H / 2 };
-    const isOp = pop.wpIdx < 0;
-    const items = isOp
-      ? ['Draw Path', 'Direction', 'Pie', 'Speed', 'Clear Path']
-      : ['Set Direction', 'Delete Node', 'Add Route', 'Speed'];
-    const iw = 80, ih = 24, gap = 4;
-    const totalH = items.length * (ih + gap) - gap;
-    const px = sp.x + 20, py = sp.y - totalH / 2;
+  // Radial menu interaction (takes priority when open)
+  if (state.radialMenu) {
+    const menu = state.radialMenu;
+    // Update hover state every frame
+    menu.hoveredIdx = hitTestRadialMenu(worldMouse, menu);
+    // Animate open
+    if (menu.animT < 1) menu.animT = Math.min(1, menu.animT + 0.15);
 
-    let clicked = -1;
-    for (let i = 0; i < items.length; i++) {
-      const iy = py + i * (ih + gap);
-      if (hitBtn(input.mousePos, px, iy, iw, ih)) { clicked = i; break; }
-    }
-
-    if (clicked >= 0 && op) {
-      if (isOp) {
-        // Operator popup: Draw Path, Direction, Speed, Clear Path
-        if (items[clicked] === 'Draw Path') {
-          op.path.waypoints = [makeWaypoint(op.position)];
-          op.path.splineLUT = null;
-          state.interaction = { type: 'placing_waypoints', opId: op.id };
-        } else if (items[clicked] === 'Direction') {
-          state.interaction = { type: 'spinning_direction', opId: op.id };
-        } else if (items[clicked] === 'Pie') {
-          state.interaction = { type: 'placing_pie', opId: op.id };
-        } else if (items[clicked] === 'Speed') {
-          // Open speed slider for operator
-          const sliderPos = { x: sp.x + 20, y: sp.y + 20 };
-          state.speedSlider = { screenPos: sliderPos, value: op.tempo, dragging: false };
-          state.interaction = { type: 'speed_slider', opId: op.id, wpIdx: null, sliderValue: op.tempo };
-          state.popup = null;
-          return;
-        } else if (items[clicked] === 'Clear Path') {
-          op.path.waypoints = [];
-          op.path.splineLUT = null;
-        }
-      } else {
-        // Node popup: Set Direction, Delete Node, Add Route, Speed
-        const wp = op.path.waypoints[pop.wpIdx];
-        if (items[clicked] === 'Set Direction') {
-          // Enter facing mode for this specific waypoint
-          state.interaction = { type: 'setting_facing', opId: op.id, wpIdx: pop.wpIdx };
-        } else if (items[clicked] === 'Delete Node') {
-          if (op.path.waypoints.length > 2) {
-            op.path.waypoints.splice(pop.wpIdx, 1);
-            rebuildPathLUT(op);
+    if (input.justPressed) {
+      const items = getRadialItems(menu.wpIdx);
+      if (menu.hoveredIdx >= 0) {
+        const item = items[menu.hoveredIdx];
+        const op = state.operators.find(o => o.id === menu.opId);
+        if (op) {
+          if (menu.wpIdx < 0) {
+            // Operator radial menu actions
+            if (item.id === 'direction') {
+              state.interaction = { type: 'spinning_direction', opId: op.id };
+            } else if (item.id === 'pie') {
+              state.interaction = { type: 'placing_pie', opId: op.id };
+            } else if (item.id === 'route') {
+              if (op.path.waypoints.length === 0) {
+                op.path.waypoints = [makeWaypoint(op.position)];
+                op.path.splineLUT = null;
+              }
+              state.interaction = { type: 'placing_waypoints', opId: op.id };
+            }
+          } else {
+            // Node radial menu actions
+            const wp = op.path.waypoints[menu.wpIdx];
+            if (item.id === 'direction') {
+              state.interaction = { type: 'setting_facing', opId: op.id, wpIdx: menu.wpIdx };
+            } else if (item.id === 'delete') {
+              if (op.path.waypoints.length > 2) {
+                op.path.waypoints.splice(menu.wpIdx, 1);
+                rebuildPathLUT(op);
+              }
+            } else if (item.id === 'speed') {
+              const cam2 = state.camera;
+              const sp2 = { x: (wp.position.x - cam2.x) * cam2.zoom + canvas.width / 2, y: (wp.position.y - cam2.y) * cam2.zoom + canvas.height / 2 };
+              state.speedSlider = { screenPos: { x: sp2.x + 20, y: sp2.y + 20 }, value: wp.tempo, dragging: false };
+              state.interaction = { type: 'speed_slider', opId: op.id, wpIdx: menu.wpIdx, sliderValue: wp.tempo };
+            } else if (item.id === 'hold') {
+              wp.hold = !wp.hold;
+              if (wp.hold && !wp.goCode) wp.goCode = 'A';
+            }
           }
-        } else if (items[clicked] === 'Add Route') {
-          // Continue routing from the last waypoint
-          state.interaction = { type: 'placing_waypoints', opId: op.id };
-        } else if (items[clicked] === 'Speed') {
-          // Open speed slider for waypoint
-          const sliderPos = { x: sp.x + 20, y: sp.y + 20 };
-          state.speedSlider = { screenPos: sliderPos, value: wp.tempo, dragging: false };
-          state.interaction = { type: 'speed_slider', opId: op.id, wpIdx: pop.wpIdx, sliderValue: wp.tempo };
-          state.popup = null;
-          return;
         }
       }
+      // Always close radial menu on click (whether item was hit or not)
+      state.radialMenu = null;
+      return;
     }
+    if (input.rightJustPressed) {
+      state.radialMenu = null;
+      return;
+    }
+    return; // block other input while radial menu is open
+  }
+
+  // Legacy popup fallback (kept for compatibility)
+  if (state.popup && input.justPressed) {
     state.popup = null;
     return;
   }
@@ -963,8 +1172,8 @@ function handleInput() {
     }
     if (input.justReleased) {
       if (!input.isDragging && op) {
-        // Short click = open popup menu on operator
-        state.popup = { opId: op.id, wpIdx: -1, position: copy(op.position) };
+        // Short click on already-selected op = open radial menu
+        state.radialMenu = { center: copy(op.position), opId: op.id, wpIdx: -1, hoveredIdx: -1, animT: 0 };
       }
       state.interaction = { type: 'idle' };
     }
@@ -1043,7 +1252,10 @@ function handleInput() {
     const op = state.operators.find(o => o.id === inter.opId);
     if (op && input.mouseDown) { op.path.waypoints[inter.wpIdx].position = copy(worldMouse); rebuildPathLUT(op); }
     if (input.justReleased) {
-      if (!input.isDragging && op) state.popup = { opId: op.id, wpIdx: inter.wpIdx, position: copy(op.path.waypoints[inter.wpIdx].position) };
+      if (!input.isDragging && op) {
+        // Short click on node = open node radial menu
+        state.radialMenu = { center: copy(op.path.waypoints[inter.wpIdx].position), opId: op.id, wpIdx: inter.wpIdx, hoveredIdx: -1, animT: 0 };
+      }
       state.interaction = { type: 'idle' };
     }
     return;
@@ -1199,20 +1411,26 @@ function handleInput() {
       if (!op.deployed) continue;
       if (distance(worldMouse, op.position) < OP_R + 8) {
         if (state.selectedOpId === op.id) {
-          // Already selected - start drag (will open popup on short click via release handler)
+          // Already selected - start drag (will open radial menu on short click via release handler)
           state.interaction = { type: 'moving_op', opId: op.id };
         } else {
-          // Select this operator
+          // First click: select + auto enter route draw mode
           state.selectedOpId = op.id;
           state.popup = null;
-          state.interaction = { type: 'moving_op', opId: op.id };
+          state.radialMenu = null;
+          // Auto-enter route draw mode
+          if (op.path.waypoints.length === 0) {
+            op.path.waypoints = [makeWaypoint(op.position)];
+            op.path.splineLUT = null;
+          }
+          state.interaction = { type: 'placing_waypoints', opId: op.id };
         }
         return;
       }
     }
 
     if (state.interaction.type === 'idle') {
-      state.selectedOpId = null; state.popup = null;
+      state.selectedOpId = null; state.popup = null; state.radialMenu = null;
     }
   }
 }
@@ -1363,7 +1581,10 @@ window.addEventListener('mouseup', (e2) => {
 function update(dt: number) {
   if (state.screen !== 'game') return;
   handleInput();
-  if (state.mode === 'executing') updateSimulation(state, dt * state.playbackSpeed);
+  if (state.mode === 'executing') {
+    updateSimulation(state, dt * state.playbackSpeed);
+    checkStageCompletion();
+  }
   clearFrameInput();
 }
 
