@@ -718,8 +718,8 @@ function drawDeployPanel(ctx: CanvasRenderingContext2D, state: GameState, H: num
   deployPanelAnimT = Math.min(1, deployPanelAnimT + 0.06);
   const eased = 1 - Math.pow(1 - deployPanelAnimT, 3);
 
-  const hudBarY = H - 36;
-  const barY = hudBarY - DEPLOY_PANEL_H - 4;
+  const hudBarY = H - 44;
+  const barY = hudBarY - DEPLOY_PANEL_H - 6;
   const barW = 20 + undeployed.length * DEPLOY_OP_SPACING;
   const barH = DEPLOY_PANEL_H;
   const deployY = barY + barH / 2;
@@ -731,21 +731,29 @@ function drawDeployPanel(ctx: CanvasRenderingContext2D, state: GameState, H: num
   ctx.globalAlpha = eased;
   ctx.translate(0, slideOffset);
 
-  // Background with rounded corners
+  // Background with rounded corners and subtle border
   ctx.beginPath();
-  ctx.roundRect(8, barY, barW, barH, 6);
-  ctx.fillStyle = C.panelBg;
+  ctx.roundRect(10, barY, barW, barH, 8);
+  ctx.fillStyle = 'rgba(12,21,37,0.9)';
   ctx.fill();
-
-  // Dotted border
-  ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
-  ctx.setLineDash([5, 4]);
+  ctx.strokeStyle = 'rgba(138,131,110,0.15)'; ctx.lineWidth = 1;
   ctx.stroke();
-  ctx.setLineDash([]);
 
-  // Label above
-  ctx.fillStyle = C.hudText; ctx.font = '9px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-  ctx.fillText('DRAG OPERATORS INTO PLACE', 12, barY - 4);
+  // Subtle inner highlight
+  ctx.beginPath();
+  ctx.roundRect(11, barY + 1, barW - 2, barH - 2, 7);
+  ctx.strokeStyle = 'rgba(255,255,255,0.02)'; ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Label above with subtle styling
+  ctx.fillStyle = 'rgba(138,131,110,0.45)'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  // Draw label char by char for letter-spacing effect
+  const depLabel = 'DEPLOY OPERATORS';
+  let dlx = 14;
+  for (const ch of depLabel) {
+    ctx.fillText(ch, dlx, barY - 5);
+    dlx += ctx.measureText(ch).width + 1;
+  }
 
   // Operators in a horizontal row facing right - with subtle idle bob
   const t = performance.now() / 1000;
@@ -776,46 +784,76 @@ function drawDeployPanel(ctx: CanvasRenderingContext2D, state: GameState, H: num
   ctx.restore();
 }
 
+let hudAnimT = 0;
+
 function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: number) {
-  const barH = 36, barY = H - barH;
+  // Smooth HUD entrance
+  hudAnimT = Math.min(1, hudAnimT + 0.04);
+  const hudEased = 1 - Math.pow(1 - hudAnimT, 3);
+  const barH = 44, barY = H - barH;
   const hov = state.hoveredHudBtn;
-
-  // Bar background with subtle gradient feel
-  ctx.fillStyle = C.hud;
-  ctx.fillRect(0, barY, W, barH);
-  // Top border with glow
-  const hudGrad = ctx.createLinearGradient(0, barY, 0, barY + 2);
-  hudGrad.addColorStop(0, 'rgba(30,51,82,0.6)');
-  hudGrad.addColorStop(1, 'rgba(30,51,82,0)');
-  ctx.fillStyle = hudGrad;
-  ctx.fillRect(0, barY, W, 2);
-  ctx.strokeStyle = C.hudBorder; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, barY); ctx.lineTo(W, barY); ctx.stroke();
-
-  ctx.font = 'bold 11px monospace'; ctx.textBaseline = 'middle';
-  const cy = barY + barH / 2;
-  const by = barY + 5;
   const mode = state.mode;
-  const rightBlockX = W / 2 + 20;
   const totalStages = state.stages.length;
+  const rightBlockX = W / 2 + 20;
 
-  // ---- Left: CLEAR + MENU + SAVE ----
-  drawHudBtn(ctx, 8, by, 56, 26, 'CLEAR', '#cc5544', hov === 'clear_level');
-  drawHudBtn(ctx, 72, by, 50, 26, 'MENU', C.hudText, hov === 'menu');
+  ctx.save();
+  // Slide up entrance
+  const hudSlide = (1 - hudEased) * barH;
+  ctx.translate(0, hudSlide);
+  ctx.globalAlpha = hudEased;
+
+  // ---- Bar background with frosted glass effect ----
+  // Soft gradient background
+  const barGrad = ctx.createLinearGradient(0, barY - 4, 0, H);
+  barGrad.addColorStop(0, 'rgba(12,21,37,0)');
+  barGrad.addColorStop(0.15, 'rgba(12,21,37,0.88)');
+  barGrad.addColorStop(1, 'rgba(12,21,37,0.96)');
+  ctx.fillStyle = barGrad;
+  ctx.fillRect(0, barY - 4, W, barH + 4);
+
+  // Top accent line
+  const lineGrad = ctx.createLinearGradient(0, 0, W, 0);
+  lineGrad.addColorStop(0, 'rgba(30,51,82,0)');
+  lineGrad.addColorStop(0.2, 'rgba(30,51,82,0.5)');
+  lineGrad.addColorStop(0.5, 'rgba(138,131,110,0.25)');
+  lineGrad.addColorStop(0.8, 'rgba(30,51,82,0.5)');
+  lineGrad.addColorStop(1, 'rgba(30,51,82,0)');
+  ctx.strokeStyle = lineGrad; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, barY - 1); ctx.lineTo(W, barY - 1); ctx.stroke();
+
+  const by = barY + 9;
+  const btnH = 26;
+
+  // ---- Left group: CLEAR | MENU | SAVE ----
+  drawHudBtn(ctx, 10, by, 54, btnH, 'CLEAR', '#cc5544', hov === 'clear_level', 'clear_level');
+  
+  // Subtle divider
+  ctx.fillStyle = 'rgba(30,51,82,0.6)';
+  ctx.fillRect(70, by + 4, 1, btnH - 8);
+  
+  drawHudBtn(ctx, 77, by, 50, btnH, 'MENU', C.hudText, hov === 'menu', 'menu');
   if (mode === 'planning') {
-    drawHudBtn(ctx, 130, by, 50, 26, 'SAVE', '#55aa66', hov === 'save_progress');
+    ctx.fillStyle = 'rgba(30,51,82,0.6)';
+    ctx.fillRect(133, by + 4, 1, btnH - 8);
+    drawHudBtn(ctx, 140, by, 48, btnH, 'SAVE', '#55aa66', hov === 'save_progress', 'save_progress');
   }
 
-  // ---- Center: Stage indicators (clickable pill buttons) ----
+  // ---- Center: Stage pills ----
   if (totalStages > 0) {
-    const pillW = 26, pillH = 20, pillGap = 4;
-    const editBtnW = 46;
+    const pillW = 28, pillH = 22, pillGap = 5;
+    const editBtnW = 48;
     const viewIdx = state.viewingStageIndex;
     const hasSelection = viewIdx >= 0 && viewIdx < totalStages && mode === 'planning';
     const totalPills = totalStages + (mode === 'planning' ? 1 : 0);
-    const totalW = totalPills * (pillW + pillGap) - pillGap + (hasSelection ? editBtnW + pillGap + 4 : 0);
+    const totalW = totalPills * (pillW + pillGap) - pillGap + (hasSelection ? editBtnW + pillGap + 6 : 0);
     const startX = W / 2 - totalW / 2;
-    const pillY = by + (26 - pillH) / 2;
+    const pillY = by + (btnH - pillH) / 2;
+
+    // Background capsule for stage group
+    ctx.beginPath();
+    ctx.roundRect(startX - 6, pillY - 3, totalW + 12, pillH + 6, 8);
+    ctx.fillStyle = 'rgba(12,21,37,0.5)';
+    ctx.fill();
 
     for (let i = 0; i < totalStages; i++) {
       const px = startX + i * (pillW + pillGap);
@@ -823,44 +861,42 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
       const selected = viewIdx === i && mode === 'planning';
       const isHov = hov === `stage_${i}`;
 
-      // Pill background
       ctx.beginPath();
-      ctx.roundRect(px, pillY, pillW, pillH, 4);
+      ctx.roundRect(px, pillY, pillW, pillH, 5);
       if (selected) {
-        ctx.fillStyle = 'rgba(85,170,102,0.25)';
+        ctx.fillStyle = 'rgba(85,170,102,0.2)';
       } else if (executing) {
-        ctx.fillStyle = 'rgba(30,60,90,0.95)';
+        ctx.fillStyle = 'rgba(40,65,95,0.9)';
       } else if (isHov) {
-        ctx.fillStyle = 'rgba(40,60,80,0.9)';
+        ctx.fillStyle = 'rgba(40,60,80,0.85)';
       } else {
-        ctx.fillStyle = 'rgba(18,30,48,0.85)';
+        ctx.fillStyle = 'rgba(20,34,52,0.8)';
       }
       ctx.fill();
-
-      // Border
-      ctx.strokeStyle = selected ? '#55aa66' : executing ? C.accent : isHov ? C.hudText : C.hudBorder;
-      ctx.lineWidth = selected ? 1.5 : 1;
+      ctx.strokeStyle = selected ? '#55aa66' : executing ? C.accent : isHov ? C.hudText : 'rgba(30,51,82,0.6)';
+      ctx.lineWidth = selected || executing ? 1.5 : 1;
       ctx.stroke();
 
-      // Number
-      ctx.fillStyle = selected ? '#55aa66' : executing ? C.accent : isHov ? C.hudBright : C.hudText;
+      ctx.fillStyle = selected ? '#55aa66' : executing ? C.hudBright : isHov ? C.hudBright : C.hudText;
       ctx.font = (executing || selected) ? 'bold 10px monospace' : '10px monospace';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(String(i + 1), px + pillW / 2, pillY + pillH / 2);
 
-      // Active underline for executing stage
+      // Active indicator dot
       if (executing) {
         ctx.fillStyle = C.accent;
-        ctx.fillRect(px + 4, pillY + pillH - 2, pillW - 8, 2);
+        ctx.beginPath();
+        ctx.roundRect(px + 6, pillY + pillH - 3, pillW - 12, 2, 1);
+        ctx.fill();
       }
     }
 
-    // Current planning stage (dotted outline)
+    // Current planning stage (dotted)
     if (mode === 'planning') {
       const px = startX + totalStages * (pillW + pillGap);
       ctx.beginPath();
-      ctx.roundRect(px, pillY, pillW, pillH, 4);
-      ctx.fillStyle = 'rgba(18,30,48,0.6)';
+      ctx.roundRect(px, pillY, pillW, pillH, 5);
+      ctx.fillStyle = 'rgba(18,30,48,0.5)';
       ctx.fill();
       ctx.strokeStyle = C.accent; ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
@@ -871,15 +907,15 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
       ctx.fillText(String(totalStages + 1), px + pillW / 2, pillY + pillH / 2);
     }
 
-    // EDIT button (appears when a stage is selected in planning mode)
+    // EDIT button
     if (hasSelection) {
-      const editX = startX + totalPills * (pillW + pillGap) + 4;
+      const editX = startX + totalPills * (pillW + pillGap) + 6;
       const isEditHov = hov === 'edit_stage';
       ctx.beginPath();
-      ctx.roundRect(editX, pillY, editBtnW, pillH, 4);
-      ctx.fillStyle = isEditHov ? 'rgba(85,170,102,0.3)' : 'rgba(18,30,48,0.85)';
+      ctx.roundRect(editX, pillY, editBtnW, pillH, 5);
+      ctx.fillStyle = isEditHov ? 'rgba(85,170,102,0.25)' : 'rgba(20,34,52,0.8)';
       ctx.fill();
-      ctx.strokeStyle = isEditHov ? '#55aa66' : C.hudBorder;
+      ctx.strokeStyle = isEditHov ? '#55aa66' : 'rgba(30,51,82,0.6)';
       ctx.lineWidth = 1;
       ctx.stroke();
       ctx.fillStyle = isEditHov ? '#55aa66' : C.hudText;
@@ -888,8 +924,7 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
     }
   }
 
-  // ---- Right block: SAVE STAGE + GO + RESET + REPLAY + SHARE ----
-  // SAVE STAGE (glows when stage just completed as a prompt)
+  // ---- Right group: SAVE STAGE | GO! | RESET | REPLAY ----
   const saveLabel = totalStages === 0 ? 'SAVE STAGE' : `SAVE ${totalStages + 1}`;
   const saveGlow = state.stageJustCompleted;
   if (mode === 'planning' || saveGlow) {
@@ -898,47 +933,160 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
       ctx.shadowColor = '#f2ecda';
       ctx.shadowBlur = 14 * pulse;
     }
-    drawHudBtn(ctx, rightBlockX, by, 100, 26, saveLabel, saveGlow ? '#f2ecda' : C.accent, hov === 'save_stage');
+    drawHudBtn(ctx, rightBlockX, by, 100, btnH, saveLabel, saveGlow ? '#f2ecda' : C.accent, hov === 'save_stage', 'save_stage');
     ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
   }
 
-  // GO / PAUSE / RESUME
+  // Divider before GO
+  ctx.fillStyle = 'rgba(30,51,82,0.6)';
+  ctx.fillRect(rightBlockX + 106, by + 4, 1, btnH - 8);
+
+  // GO / PAUSE / RESUME - primary action, visually distinct
   if (mode === 'planning') {
-    drawHudBtn(ctx, rightBlockX + 108, by, 70, 26, 'GO!', C.accent, hov === 'go');
+    drawHudBtnPrimary(ctx, rightBlockX + 113, by - 1, 68, btnH + 2, 'GO!', hov === 'go');
   } else if (mode === 'executing') {
-    drawHudBtn(ctx, rightBlockX + 108, by, 70, 26, 'PAUSE', C.hudText, hov === 'go');
+    drawHudBtn(ctx, rightBlockX + 113, by, 68, btnH, 'PAUSE', C.hudText, hov === 'go', 'go');
   } else {
-    drawHudBtn(ctx, rightBlockX + 108, by, 70, 26, 'RESUME', C.accent, hov === 'go');
+    drawHudBtnPrimary(ctx, rightBlockX + 113, by - 1, 68, btnH + 2, 'RESUME', hov === 'go');
   }
 
-  drawHudBtn(ctx, rightBlockX + 186, by, 56, 26, 'RESET', C.hudText, hov === 'reset');
+  ctx.fillStyle = 'rgba(30,51,82,0.6)';
+  ctx.fillRect(rightBlockX + 187, by + 4, 1, btnH - 8);
+
+  drawHudBtn(ctx, rightBlockX + 194, by, 54, btnH, 'RESET', C.hudText, hov === 'reset', 'reset');
 
   if (totalStages > 0) {
-    drawHudBtn(ctx, rightBlockX + 250, by, 60, 26, 'REPLAY', C.accent, hov === 'replay');
+    drawHudBtn(ctx, rightBlockX + 254, by, 60, btnH, 'REPLAY', C.accent, hov === 'replay', 'replay');
   }
 
-  // ---- Top-right: SHARE button (prominent, always visible) ----
+  // ---- Timer (right edge) ----
+  const m = Math.floor(state.elapsedTime / 60), s = Math.floor(state.elapsedTime % 60);
+  const timerStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  ctx.fillStyle = mode === 'executing' ? C.accent : 'rgba(138,131,110,0.5)';
+  ctx.font = 'bold 12px monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  ctx.fillText(timerStr, W - 14, barY + barH / 2);
+
+  ctx.restore(); // HUD slide
+
+  // ---- Top-right: SHARE button ----
   drawShareButton(ctx, W, hov === 'share');
 
-  // Flow Kickers logo top-left - matches menu title style
+  // ---- Top-right: Mode badge ----
+  drawModeBadge(ctx, W, mode);
+
+  // ---- Top-left: Logo ----
+  drawLogo(ctx);
+}
+
+/** Primary action button (GO / RESUME) - visually prominent */
+function drawHudBtnPrimary(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, label: string, hovered: boolean) {
+  const key = '_primary_' + label;
+  if (!hudBtnHoverT[key]) hudBtnHoverT[key] = 0;
+  hudBtnHoverT[key] += ((hovered ? 1 : 0) - hudBtnHoverT[key]) * 0.2;
+  const t = hudBtnHoverT[key];
+
+  const lift = t * 2;
+  const r = 6;
+
+  // Background - filled cream/accent
+  ctx.beginPath();
+  ctx.roundRect(x, y - lift, w, h, r);
+  const bgAlpha = 0.15 + 0.1 * t;
+  ctx.fillStyle = `rgba(232,223,198,${bgAlpha})`;
+  ctx.fill();
+
+  // Border
+  if (t > 0.05) {
+    ctx.shadowColor = C.accent;
+    ctx.shadowBlur = 10 * t;
+  }
+  ctx.strokeStyle = `rgba(232,223,198,${0.5 + 0.5 * t})`;
+  ctx.lineWidth = 1.5 + 0.5 * t;
+  ctx.stroke();
+  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+
+  // Label
+  ctx.fillStyle = C.hudBright;
+  ctx.globalAlpha = 0.85 + 0.15 * t;
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + w / 2, y - lift + h / 2);
+  ctx.textBaseline = 'alphabetic';
+  ctx.globalAlpha = 1;
+}
+
+/** Mode badge top-right (below share) */
+let modeBadgeAnimT = 0;
+let lastMode = '';
+
+function drawModeBadge(ctx: CanvasRenderingContext2D, W: number, mode: string) {
+  // Animate on mode change
+  if (mode !== lastMode) { modeBadgeAnimT = 0; lastMode = mode; }
+  modeBadgeAnimT = Math.min(1, modeBadgeAnimT + 0.08);
+  const eased = 1 - Math.pow(1 - modeBadgeAnimT, 3);
+
+  const modeColor = mode === 'executing' ? C.cleared : mode === 'paused' ? '#ccaa44' : C.accent;
+  const modeLabel = mode.toUpperCase();
+  
+  ctx.font = 'bold 9px monospace';
+  const tw = ctx.measureText(modeLabel).width;
+  const bw = tw + 20, bh = 22;
+  const bx = W - bw - 12, by = 48;
+
   ctx.save();
-  ctx.globalAlpha = 0.35;
-  // "Flow" - big italic serif
-  ctx.font = 'italic 700 42px Georgia, "Times New Roman", serif';
+  // Scale entrance
+  const s = 0.9 + 0.1 * eased;
+  ctx.translate(bx + bw / 2, by + bh / 2);
+  ctx.scale(s, s);
+  ctx.globalAlpha = eased;
+  ctx.translate(-(bx + bw / 2), -(by + bh / 2));
+
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, 5);
+  ctx.fillStyle = 'rgba(12,21,37,0.85)';
+  ctx.fill();
+  ctx.strokeStyle = modeColor;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = eased * 0.6;
+  ctx.stroke();
+  ctx.globalAlpha = eased;
+
+  // Pulse dot for executing
+  if (mode === 'executing') {
+    const pulse = 0.4 + 0.6 * Math.sin(performance.now() / 400);
+    ctx.fillStyle = modeColor;
+    ctx.globalAlpha = eased * pulse;
+    ctx.beginPath();
+    ctx.arc(bx + 10, by + bh / 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = eased;
+  }
+
+  ctx.fillStyle = modeColor;
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(modeLabel, bx + bw / 2 + (mode === 'executing' ? 4 : 0), by + bh / 2);
+
+  ctx.restore();
+}
+
+/** Flow Kickers logo top-left */
+function drawLogo(ctx: CanvasRenderingContext2D) {
+  ctx.save();
+  ctx.globalAlpha = 0.3;
+  ctx.font = 'italic 700 38px Georgia, "Times New Roman", serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#f2ecda'; // cream-bright
-  ctx.fillText('Flow', 14, 44);
+  ctx.fillStyle = '#f2ecda';
+  ctx.fillText('Flow', 14, 40);
   const flowW = ctx.measureText('Flow').width;
-  // "Kickers" - smaller uppercase monospace with letter-spacing
-  ctx.font = 'bold 15px monospace';
-  ctx.fillStyle = '#b0a88e'; // cream-dim
-  // Canvas doesn't support letter-spacing, so draw char by char
+  ctx.font = 'bold 14px monospace';
+  ctx.fillStyle = '#b0a88e';
   const kickers = 'KICKERS';
-  let kx = 14 + flowW + 8;
-  const ky = 44; // aligned to baseline of "Flow"
+  let kx = 14 + flowW + 7;
   for (const ch of kickers) {
-    ctx.fillText(ch, kx, ky);
-    kx += ctx.measureText(ch).width + 4; // 4px extra spacing
+    ctx.fillText(ch, kx, 40);
+    kx += ctx.measureText(ch).width + 3.5;
   }
   ctx.globalAlpha = 1;
   ctx.restore();

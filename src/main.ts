@@ -2113,35 +2113,36 @@ function handleInput() {
     if (input.justPressed) { sfxClick(); openSharePanel(); return; }
   }
 
-  // ---- Bottom HUD bar hover detection ----
-  const hudBarY = canvas.height - 36;
-  const btnY = hudBarY + 5;
+  // ---- Bottom HUD bar hover detection (must match renderer drawHUD positions) ----
+  const hudBarY = canvas.height - 44;
+  const btnY = hudBarY + 9;
+  const btnH = 26;
   const rightBlockX = W / 2 + 20;
   const hudBtns: Record<string, { x: number; y: number; w: number; h: number }> = {
-    clear_level: { x: 8, y: btnY, w: 56, h: 26 },
-    menu: { x: 72, y: btnY, w: 50, h: 26 },
-    save_progress: { x: 130, y: btnY, w: 50, h: 26 },
-    save_stage: { x: rightBlockX, y: btnY, w: 100, h: 26 },
-    go: { x: rightBlockX + 108, y: btnY, w: 70, h: 26 },
-    reset: { x: rightBlockX + 186, y: btnY, w: 56, h: 26 },
-    replay: { x: rightBlockX + 250, y: btnY, w: 60, h: 26 },
+    clear_level: { x: 10, y: btnY, w: 54, h: btnH },
+    menu: { x: 77, y: btnY, w: 50, h: btnH },
+    save_progress: { x: 140, y: btnY, w: 48, h: btnH },
+    save_stage: { x: rightBlockX, y: btnY, w: 100, h: btnH },
+    go: { x: rightBlockX + 113, y: btnY - 1, w: 68, h: btnH + 2 },
+    reset: { x: rightBlockX + 194, y: btnY, w: 54, h: btnH },
+    replay: { x: rightBlockX + 254, y: btnY, w: 60, h: btnH },
   };
   // Dynamic stage pill buttons (must match renderer layout)
   const totalStages = state.stages.length;
   if (totalStages > 0) {
-    const pillW = 26, pillH = 20, pillGap = 4;
-    const editBtnW = 46;
+    const pillW = 28, pillH = 22, pillGap = 5;
+    const editBtnW = 48;
     const viewIdx = state.viewingStageIndex;
     const hasSelection = viewIdx >= 0 && viewIdx < totalStages && state.mode === 'planning';
     const totalPills = totalStages + (state.mode === 'planning' ? 1 : 0);
-    const totalW = totalPills * (pillW + pillGap) - pillGap + (hasSelection ? editBtnW + pillGap + 4 : 0);
+    const totalW = totalPills * (pillW + pillGap) - pillGap + (hasSelection ? editBtnW + pillGap + 6 : 0);
     const startX = W / 2 - totalW / 2;
-    const pillY = btnY + (26 - pillH) / 2;
+    const pillY = btnY + (btnH - pillH) / 2;
     for (let i = 0; i < totalStages; i++) {
       hudBtns[`stage_${i}`] = { x: startX + i * (pillW + pillGap), y: pillY, w: pillW, h: pillH };
     }
     if (hasSelection) {
-      const editX = startX + totalPills * (pillW + pillGap) + 4;
+      const editX = startX + totalPills * (pillW + pillGap) + 6;
       hudBtns['edit_stage'] = { x: editX, y: pillY, w: editBtnW, h: pillH };
     }
   }
@@ -2382,8 +2383,8 @@ function handleInput() {
     const op = state.operators.find(o => o.id === inter.opId);
     if (input.justPressed && op) {
       // check if clicking in deploy bar area - cancel waypoint placing
-      const hudBarY = canvas.height - 36;
-      const deployBarY = hudBarY - DEPLOY_PANEL_H - 4;
+      const hudBarY = canvas.height - 44;
+      const deployBarY = hudBarY - DEPLOY_PANEL_H - 6;
       if (input.mousePos.y > deployBarY) { state.interaction = { type: 'idle' }; state.pendingNode = null; return; }
       // Check if clicking on the current operator itself - open radial menu
       if (distance(worldMouse, op.position) < OP_R + 8) {
@@ -2543,10 +2544,10 @@ function handleInput() {
   if (input.justPressed) {
     // Deploy bar hit test (screen-space) - horizontal row at bottom-left
     {
-      const hudBarY2 = canvas.height - 36;
-      const deployY = hudBarY2 - DEPLOY_PANEL_H / 2;
+      const hudBarY2 = canvas.height - 44;
+      const deployY = hudBarY2 - DEPLOY_PANEL_H / 2 - 3;
       const undeployed = state.operators.filter(o => !o.deployed);
-      if (undeployed.length > 0 && input.mousePos.y > hudBarY2 - DEPLOY_PANEL_H - 8 && input.mousePos.y < hudBarY2) {
+      if (undeployed.length > 0 && input.mousePos.y > hudBarY2 - DEPLOY_PANEL_H - 10 && input.mousePos.y < hudBarY2) {
         for (let i = 0; i < undeployed.length; i++) {
           const opX = 30 + i * DEPLOY_OP_SPACING;
           if (Math.abs(input.mousePos.x - opX) < 16 && Math.abs(input.mousePos.y - deployY) < 18) {
