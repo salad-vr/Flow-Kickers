@@ -1631,26 +1631,25 @@ function handleInput() {
     return;
   }
 
-  // IDLE: new clicks
+  // IDLE: right-click
   if (input.rightJustPressed) {
-    let handled = false;
     const selOp = state.operators.find(o => o.id === state.selectedOpId && o.deployed);
     if (selOp) {
-      for (let i = 0; i < selOp.path.waypoints.length; i++) {
+      // Check if right-clicking near a waypoint node first
+      for (let i = 1; i < selOp.path.waypoints.length; i++) {
         if (distance(worldMouse, selOp.path.waypoints[i].position) < NODE_R + 6) {
-          state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: i }; handled = true; break;
+          state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: i };
+          return;
         }
       }
-      if (!handled && distance(worldMouse, selOp.position) < OP_R + 8) {
-        state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: null }; handled = true;
-      }
+      // Otherwise: right-click anywhere with an operator selected = set that operator's direction
+      state.interaction = { type: 'setting_facing', opId: selOp.id, wpIdx: null };
+      return;
     }
-    // If nothing was targeted, start panning
-    if (!handled) {
-      state.isPanning = true;
-      state.panStart = { x: input.mousePos.x, y: input.mousePos.y };
-      state.panCamStart = { x: state.camera.x, y: state.camera.y };
-    }
+    // No operator selected - start panning
+    state.isPanning = true;
+    state.panStart = { x: input.mousePos.x, y: input.mousePos.y };
+    state.panCamStart = { x: state.camera.x, y: state.camera.y };
     return;
   }
 
