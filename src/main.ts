@@ -641,6 +641,7 @@ interface SavedMap {
     f?: number[][];
     o?: any[];
     fc?: any[];
+    floors?: any[];
   };
   createdAt: number;
 }
@@ -667,6 +668,24 @@ function saveCurrentMap(name: string) {
       t: customRoom.threats.map(t => [t.position.x, t.position.y]),
       e: customRoom.entryPoints.map(e => [e.x, e.y]),
       f: customRoom.floor.map(p => [p.x, p.y]),
+      o: customRoom.objects.map(o => {
+        const arr: any[] = [o.x, o.y, o.w, o.h, o.type];
+        if (o.connectsFloors) arr.push(o.connectsFloors);
+        return arr;
+      }),
+      fc: customRoom.floorCut.map(p => [p.x, p.y]),
+      floors: customRoom.floors.map(fl => ({
+        level: fl.level,
+        bounds: fl.bounds,
+        w: fl.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.doors.map(d => [d.pos, d.open ? 1 : 0])]),
+        t: fl.threats.map(t => [t.position.x, t.position.y]),
+        o: fl.objects.map(o => {
+          const arr: any[] = [o.x, o.y, o.w, o.h, o.type];
+          if (o.connectsFloors) arr.push(o.connectsFloors);
+          return arr;
+        }),
+        fc: fl.floorCut.map(p => [p.x, p.y]),
+      })),
     },
     createdAt: Date.now(),
   };
@@ -702,24 +721,49 @@ function deleteSavedMap(index: number) {
   refreshCustomMapsUI();
 }
 
+function restoreWalls(arr: any[]): import('./types').WallSegment[] {
+  return (arr || []).map((w: any[]) => {
+    const wall = makeWall(w[0], w[1], w[2], w[3]);
+    if (Array.isArray(w[4])) {
+      wall.doors = w[4].map((d: any) => ({ pos: d[0], open: d[1] === 1 }));
+    } else if (w[4] > 0) {
+      wall.doors = [{ pos: w[5] ?? 0.5, open: w[4] === 1 }];
+    }
+    return wall;
+  });
+}
+
+function restoreObjects(arr: any[]): import('./types').RoomObject[] {
+  return (arr || []).map((o: any) => {
+    const obj: import('./types').RoomObject = {
+      x: o[0] ?? o.x, y: o[1] ?? o.y, w: o[2] ?? o.w, h: o[3] ?? o.h,
+      type: o[4] ?? o.type ?? 'block',
+    };
+    // Restore connectsFloors (could be at index 5 in array format, or as a property)
+    if (Array.isArray(o[5])) obj.connectsFloors = [o[5][0], o[5][1]];
+    else if (o.connectsFloors) obj.connectsFloors = o.connectsFloors;
+    return obj;
+  });
+}
+
 function roomFromSavedMap(mapData: SavedMap['data']): Room {
   return {
     name: 'Custom',
-    walls: (mapData.w || []).map((w: any[]) => {
-      const wall = makeWall(w[0], w[1], w[2], w[3]);
-      if (Array.isArray(w[4])) {
-        wall.doors = w[4].map((d: any) => ({ pos: d[0], open: d[1] === 1 }));
-      } else if (w[4] > 0) {
-        wall.doors = [{ pos: w[5] ?? 0.5, open: w[4] === 1 }];
-      }
-      return wall;
-    }),
+    walls: restoreWalls(mapData.w),
     threats: (mapData.t || []).map((t: number[]) => makeThreat(t[0], t[1])),
     entryPoints: (mapData.e || []).map((e: number[]) => ({ x: e[0], y: e[1] })),
     floor: (mapData.f || []).map((p: number[]) => ({ x: p[0], y: p[1] })),
-    objects: (mapData.o || []).map((o: any) => ({ x: o[0] ?? o.x, y: o[1] ?? o.y, w: o[2] ?? o.w, h: o[3] ?? o.h, type: o[4] ?? o.type ?? 'block' })),
+    objects: restoreObjects(mapData.o || []),
     floorCut: (mapData.fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
-    floors: (mapData as any).floors || [],
+    floors: (mapData.floors || []).map((fl: any) => ({
+      level: fl.level,
+      bounds: fl.bounds || { x: 0, y: 0, w: 0, h: 0 },
+      walls: restoreWalls(fl.w || []),
+      threats: (fl.t || []).map((t: number[]) => makeThreat(t[0], t[1])),
+      objects: restoreObjects(fl.o || []),
+      floor: [],  // recomputed on load
+      floorCut: (fl.fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
+    })),
   };
 }
 
@@ -865,6 +909,9 @@ interface SerializedSession {
     t: number[][];
     e: number[][];
     f: number[][];
+    o?: any[];
+    fc?: any[];
+    floors?: any[];
   };
   operators: {
     id: number;
@@ -902,6 +949,24 @@ function serializeSession(): SerializedSession {
       t: state.room.threats.map(t => [t.position.x, t.position.y, t.neutralized ? 1 : 0]),
       e: state.room.entryPoints.map(e => [e.x, e.y]),
       f: state.room.floor.map(p => [p.x, p.y]),
+      o: state.room.objects.map(o => {
+        const arr: any[] = [o.x, o.y, o.w, o.h, o.type];
+        if (o.connectsFloors) arr.push(o.connectsFloors);
+        return arr;
+      }),
+      fc: state.room.floorCut.map(p => [p.x, p.y]),
+      floors: (state.room.floors || []).map(fl => ({
+        level: fl.level,
+        bounds: fl.bounds,
+        w: fl.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.doors.map(d => [d.pos, d.open ? 1 : 0])]),
+        t: fl.threats.map(t => [t.position.x, t.position.y, t.neutralized ? 1 : 0]),
+        o: fl.objects.map(o => {
+          const arr: any[] = [o.x, o.y, o.w, o.h, o.type];
+          if (o.connectsFloors) arr.push(o.connectsFloors);
+          return arr;
+        }),
+        fc: fl.floorCut.map(p => [p.x, p.y]),
+      })),
     },
     operators: state.operators.map(op => ({
       id: op.id,
@@ -953,13 +1018,7 @@ function restoreSession(data: SerializedSession) {
   // Restore room
   const room: Room = {
     name: data.room.name,
-    walls: (data.room.w || []).map((w: any[]) => {
-      const wall = makeWall(w[0], w[1], w[2], w[3]);
-      if (Array.isArray(w[4])) {
-        wall.doors = w[4].map((dd: any) => ({ pos: dd[0], open: dd[1] === 1 }));
-      }
-      return wall;
-    }),
+    walls: restoreWalls(data.room.w || []),
     threats: (data.room.t || []).map((t: number[]) => {
       const threat = makeThreat(t[0], t[1]);
       if (t[2] === 1) { threat.neutralized = true; threat.neutralizeTimer = 1; }
@@ -967,9 +1026,20 @@ function restoreSession(data: SerializedSession) {
     }),
     entryPoints: (data.room.e || []).map((e: number[]) => ({ x: e[0], y: e[1] })),
     floor: (data.room.f || []).map((p: number[]) => ({ x: p[0], y: p[1] })),
-    objects: ((data.room as any).o || []).map((o: any) => ({ x: o[0] ?? o.x, y: o[1] ?? o.y, w: o[2] ?? o.w, h: o[3] ?? o.h, type: o[4] ?? o.type ?? 'block' })),
+    objects: restoreObjects((data.room as any).o || []),
     floorCut: ((data.room as any).fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
-    floors: (data.room as any).floors || [],
+    floors: ((data.room as any).floors || []).map((fl: any) => ({
+      level: fl.level,
+      bounds: fl.bounds || { x: 0, y: 0, w: 0, h: 0 },
+      walls: restoreWalls(fl.w || fl.walls || []),
+      threats: (fl.t || fl.threats || []).map((t: any) => {
+        if (Array.isArray(t)) return makeThreat(t[0], t[1]);
+        return makeThreat(t.position.x, t.position.y);
+      }),
+      objects: restoreObjects(fl.o || fl.objects || []),
+      floor: fl.floor || [],
+      floorCut: (fl.fc || fl.floorCut || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
+    })),
   };
   state.room = room;
 
