@@ -56,17 +56,55 @@ export function getWallsForCollision(room: Room, floorLevel = 0): Wall[] {
   return wallSegmentsToCollision(fl.walls);
 }
 
-/** Get walls, threats, objects, floor, and floorCut for a given floor level */
+/** Get walls, threats, objects, floor, and floorCut for a given floor level.
+ *  Connected stairs are included on every floor they connect to. */
 export function getFloorData(room: Room, floorLevel: number): {
   walls: WallSegment[]; threats: ThreatMarker[]; objects: import('../types').RoomObject[];
   floor: import('../math/vec2').Vec2[]; floorCut: import('../math/vec2').Vec2[];
 } {
+  let baseObjects: import('../types').RoomObject[];
+  let walls: WallSegment[];
+  let threats: ThreatMarker[];
+  let floor: import('../math/vec2').Vec2[];
+  let floorCut: import('../math/vec2').Vec2[];
+
   if (floorLevel === 0) {
-    return { walls: room.walls, threats: room.threats, objects: room.objects, floor: room.floor, floorCut: room.floorCut };
+    baseObjects = room.objects;
+    walls = room.walls; threats = room.threats; floor = room.floor; floorCut = room.floorCut;
+  } else {
+    const fl = room.floors?.find(f => f.level === floorLevel);
+    if (!fl) return { walls: [], threats: [], objects: [], floor: [], floorCut: [] };
+    baseObjects = fl.objects;
+    walls = fl.walls; threats = fl.threats; floor = fl.floor; floorCut = fl.floorCut;
   }
-  const fl = room.floors?.find(f => f.level === floorLevel);
-  if (!fl) return { walls: [], threats: [], objects: [], floor: [], floorCut: [] };
-  return { walls: fl.walls, threats: fl.threats, objects: fl.objects, floor: fl.floor, floorCut: fl.floorCut };
+
+  // Collect connected stairs from OTHER floors that also connect to this floor
+  const extraStairs: import('../types').RoomObject[] = [];
+  // Check ground floor objects (if we're not on ground floor)
+  if (floorLevel !== 0) {
+    for (const obj of room.objects) {
+      if (obj.type === 'stairs' && obj.connectsFloors &&
+          (obj.connectsFloors[0] === floorLevel || obj.connectsFloors[1] === floorLevel)) {
+        // Only add if not already in baseObjects
+        if (!baseObjects.includes(obj)) extraStairs.push(obj);
+      }
+    }
+  }
+  // Check other floor layers
+  if (room.floors) {
+    for (const fl of room.floors) {
+      if (fl.level === floorLevel) continue;
+      for (const obj of fl.objects) {
+        if (obj.type === 'stairs' && obj.connectsFloors &&
+            (obj.connectsFloors[0] === floorLevel || obj.connectsFloors[1] === floorLevel)) {
+          if (!baseObjects.includes(obj)) extraStairs.push(obj);
+        }
+      }
+    }
+  }
+
+  const objects = extraStairs.length > 0 ? [...baseObjects, ...extraStairs] : baseObjects;
+  return { walls, threats, objects, floor, floorCut };
 }
 
 /** Get the maximum floor level in a room */

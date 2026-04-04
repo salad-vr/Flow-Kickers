@@ -3061,11 +3061,25 @@ window.addEventListener('mouseup', (e2) => {
 });
 
 // ---- Game Loop ----
+/** Track previous floor of each operator for auto-switch detection */
+let prevOpFloors: Record<number, number> = {};
+
 function update(dt: number) {
   if (state.screen !== 'game') return;
   handleInput();
   if (state.mode === 'executing') {
+    // Snapshot floors before simulation step
+    for (const op of state.operators) {
+      if (op.deployed) prevOpFloors[op.id] = op.currentFloor;
+    }
     updateSimulation(state, dt * state.playbackSpeed);
+    // Auto-switch active floor when any operator transitions floors
+    for (const op of state.operators) {
+      if (op.deployed && prevOpFloors[op.id] !== undefined && prevOpFloors[op.id] !== op.currentFloor) {
+        state.activeFloor = op.currentFloor;
+        break; // follow the first operator that transitions
+      }
+    }
     checkStageCompletion();
   }
   clearFrameInput();
@@ -3292,6 +3306,32 @@ function renderBuild() {
           const ly = obj.y + obj.h * frac;
           ctx.beginPath(); ctx.moveTo(obj.x, ly); ctx.lineTo(obj.x + obj.w, ly); ctx.stroke();
         }
+      }
+    }
+  }
+
+  // ---- Connected stairs from other floors (visible on this floor too) ----
+  if (buildActiveFloor > 0) {
+    // Draw stairs from ground floor that connect to this floor
+    for (const obj of customRoom.objects) {
+      if (obj.type === 'stairs' && obj.connectsFloors &&
+          (obj.connectsFloors[0] === buildActiveFloor || obj.connectsFloors[1] === buildActiveFloor) &&
+          !afd.objects.includes(obj)) {
+        ctx.fillStyle = 'rgba(70,80,90,0.5)';
+        ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+        ctx.strokeStyle = 'rgba(100,160,200,0.7)'; ctx.lineWidth = 1.5;
+        ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
+        const steps = Math.max(2, Math.round(Math.min(obj.w, obj.h) / 10));
+        const isWide = obj.w > obj.h;
+        ctx.strokeStyle = 'rgba(160,170,180,0.5)'; ctx.lineWidth = 1;
+        for (let si = 1; si < steps; si++) {
+          const frac = si / steps;
+          if (isWide) { const lx = obj.x + obj.w * frac; ctx.beginPath(); ctx.moveTo(lx, obj.y); ctx.lineTo(lx, obj.y + obj.h); ctx.stroke(); }
+          else { const ly = obj.y + obj.h * frac; ctx.beginPath(); ctx.moveTo(obj.x, ly); ctx.lineTo(obj.x + obj.w, ly); ctx.stroke(); }
+        }
+        const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2;
+        ctx.fillStyle = 'rgba(100,180,220,0.7)'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(`F${obj.connectsFloors[0] + 1}\u2194F${obj.connectsFloors[1] + 1}`, cx, cy);
       }
     }
   }
