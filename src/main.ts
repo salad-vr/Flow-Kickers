@@ -131,13 +131,20 @@ function sizeCanvas() {
   canvas.height = window.innerHeight;
 }
 sizeCanvas();
-window.addEventListener('resize', sizeCanvas);
+// resize handled below with buildCv
 initInput(canvas);
 
 // Build canvas
 const buildCv = document.getElementById('build-cv') as HTMLCanvasElement;
-buildCv.width = 800;
-buildCv.height = 600;
+function sizeBuildCanvas() {
+  const area = document.querySelector('.build-canvas-area');
+  if (!area) return;
+  const rect = area.getBoundingClientRect();
+  buildCv.width = rect.width * devicePixelRatio;
+  buildCv.height = rect.height * devicePixelRatio;
+}
+sizeBuildCanvas();
+window.addEventListener('resize', () => { sizeCanvas(); sizeBuildCanvas(); });
 
 // ---- State ----
 let selRoom: RoomTemplateName = 'Corner Fed';
@@ -167,6 +174,20 @@ let buildMouseDown = false;
 let buildHoveredWall = -1;
 let buildHistory: string[] = [];
 let buildAnimT = 0;
+
+// Build camera
+let buildCam = { x: 400, y: 300, zoom: 1 };
+let buildPanning = false;
+let buildPanStart: Vec2 = { x: 0, y: 0 };
+let buildPanCamStart: Vec2 = { x: 0, y: 0 };
+
+function buildScreenToWorld(sx: number, sy: number): Vec2 {
+  const w = buildCv.width, h = buildCv.height;
+  return {
+    x: (sx - w / 2) / buildCam.zoom + buildCam.x,
+    y: (sy - h / 2) / buildCam.zoom + buildCam.y,
+  };
+}
 
 function pushHistory() {
   buildHistory.push(JSON.stringify({
@@ -921,6 +942,12 @@ function handleInput() {
 // ========== BUILD SCREEN INPUT ==========
 function buildPos(e: MouseEvent): Vec2 {
   const r = buildCv.getBoundingClientRect();
+  const sx = (e.clientX - r.left) * (buildCv.width / r.width);
+  const sy = (e.clientY - r.top) * (buildCv.height / r.height);
+  return buildScreenToWorld(sx, sy);
+}
+function buildScreenPos(e: MouseEvent): Vec2 {
+  const r = buildCv.getBoundingClientRect();
   return { x: (e.clientX - r.left) * (buildCv.width / r.width), y: (e.clientY - r.top) * (buildCv.height / r.height) };
 }
 
@@ -1028,6 +1055,32 @@ buildCv.addEventListener('mouseup', () => {
 
 buildCv.addEventListener('contextmenu', (e) => e.preventDefault());
 
+// Build canvas zoom + pan
+buildCv.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const factor = 1 - e.deltaY * 0.001;
+  buildCam.zoom = Math.max(0.2, Math.min(4, buildCam.zoom * factor));
+}, { passive: false });
+
+buildCv.addEventListener('mousedown', (e2) => {
+  if (e2.button === 1) { // middle click
+    e2.preventDefault();
+    buildPanning = true;
+    buildPanStart = buildScreenPos(e2);
+    buildPanCamStart = { x: buildCam.x, y: buildCam.y };
+  }
+});
+window.addEventListener('mousemove', (e2) => {
+  if (buildPanning) {
+    const sp = buildScreenPos(e2);
+    buildCam.x = buildPanCamStart.x - (sp.x - buildPanStart.x) / buildCam.zoom;
+    buildCam.y = buildPanCamStart.y - (sp.y - buildPanStart.y) / buildCam.zoom;
+  }
+});
+window.addEventListener('mouseup', (e2) => {
+  if (e2.button === 1) buildPanning = false;
+});
+
 // ---- Game Loop ----
 function update(dt: number) {
   if (state.screen !== 'game') return;
@@ -1051,6 +1104,12 @@ function renderBuild() {
   ctx.fillStyle = '#080e12';
   ctx.fillRect(0, 0, W, H);
 
+  // Apply build camera
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(buildCam.zoom, buildCam.zoom);
+  ctx.translate(-buildCam.x, -buildCam.y);
+
   // Floor cells
   if (customRoom.floor.length > 0) {
     ctx.fillStyle = '#1a1814';
@@ -1059,19 +1118,26 @@ function renderBuild() {
     }
   }
 
-  // Grid dots
+  // Grid dots (world space, only visible area)
   ctx.fillStyle = 'rgba(68,187,170,0.06)';
-  for (let x = 0; x <= W; x += GRID) for (let y = 0; y <= H; y += GRID) {
-    ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
+  {
+    const vl = buildCam.x - W / 2 / buildCam.zoom, vt = buildCam.y - H / 2 / buildCam.zoom;
+    const vr = buildCam.x + W / 2 / buildCam.zoom, vb = buildCam.y + H / 2 / buildCam.zoom;
+    const gx0 = Math.floor(vl / GRID) * GRID, gy0 = Math.floor(vt / GRID) * GRID;
+    for (let x = gx0; x <= vr; x += GRID) for (let y = gy0; y <= vb; y += GRID) {
+      ctx.beginPath(); ctx.arc(x, y, 1 / buildCam.zoom, 0, Math.PI * 2); ctx.fill();
+    }
   }
 
   // Crosshair guide lines
   if (buildTool !== 'delete' && buildTool !== 'door') {
     const sx = snapGrid(buildMousePos.x), sy = snapGrid(buildMousePos.y);
+    const vl = buildCam.x - W / 2 / buildCam.zoom, vt = buildCam.y - H / 2 / buildCam.zoom;
+    const vr = buildCam.x + W / 2 / buildCam.zoom, vb = buildCam.y + H / 2 / buildCam.zoom;
     ctx.strokeStyle = 'rgba(68,187,170,0.08)';
-    ctx.lineWidth = 1; ctx.setLineDash([4, 10]);
-    ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(W, sy); ctx.stroke();
+    ctx.lineWidth = 1 / buildCam.zoom; ctx.setLineDash([4 / buildCam.zoom, 10 / buildCam.zoom]);
+    ctx.beginPath(); ctx.moveTo(sx, vt); ctx.lineTo(sx, vb); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(vl, sy); ctx.lineTo(vr, sy); ctx.stroke();
     ctx.setLineDash([]);
   }
 
@@ -1176,9 +1242,9 @@ function renderBuild() {
   if (buildTool !== 'delete' && buildTool !== 'door') {
     const sx = snapGrid(buildMousePos.x), sy = snapGrid(buildMousePos.y);
     ctx.fillStyle = 'rgba(68,187,170,0.3)';
-    ctx.beginPath(); ctx.arc(sx, sy, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(68,187,170,0.5)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(sx, sy, 4, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(sx, sy, 4 / buildCam.zoom, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(68,187,170,0.5)'; ctx.lineWidth = 1 / buildCam.zoom;
+    ctx.beginPath(); ctx.arc(sx, sy, 4 / buildCam.zoom, 0, Math.PI * 2); ctx.stroke();
   }
 
   // Delete cursor
@@ -1211,6 +1277,9 @@ function renderBuild() {
       }
     }
   }
+
+  // Restore camera for HUD (screen-space)
+  ctx.restore();
 
   // Tool info HUD
   const toolLabel: Record<BuildToolType, string> = {
