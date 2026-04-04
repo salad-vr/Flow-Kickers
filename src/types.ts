@@ -48,7 +48,7 @@ export interface NodePopup { opId: number; wpIdx: number; position: Vec2; }
 
 export interface Camera { x: number; y: number; zoom: number; }
 
-export type HudBtn = 'go' | 'reset' | 'menu' | 'share' | 'save_stage' | 'replay' | null;
+export type HudBtn = 'go' | 'reset' | 'menu' | 'share' | 'save_stage' | 'replay' | 'clear_level' | null;
 
 /** A snapshot of all operator paths + start positions for one phase of the plan */
 export interface Stage {
@@ -135,6 +135,12 @@ export interface GameState {
   executingStageIndex: number;
   /** True when replaying all stages sequentially */
   isReplaying: boolean;
+  /** True when all stages just finished executing - prompts SAVE STAGE glow */
+  stageJustCompleted: boolean;
+  /** Snapshot of operator states before GO was pressed, for reset-to-planning */
+  preGoSnapshot: Stage | null;
+  /** Index of stage user clicked in the indicator to view */
+  viewingStageIndex: number;
 }
 
 export function makeWaypoint(pos: Vec2): Waypoint {

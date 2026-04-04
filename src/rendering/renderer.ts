@@ -435,6 +435,7 @@ const OP_RADIAL_ITEMS: RadialMenuItem[] = [
 ];
 const NODE_RADIAL_ITEMS: RadialMenuItem[] = [
   { id: 'direction', icon: 'direction', label: 'Direction' },
+  { id: 'route',     icon: 'route',     label: 'Add Route' },
   { id: 'delete',    icon: 'delete',    label: 'Delete' },
   { id: 'speed',     icon: 'speed',     label: 'Speed' },
   { id: 'hold',      icon: 'hold',      label: 'Hold' },

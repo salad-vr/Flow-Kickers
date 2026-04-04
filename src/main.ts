@@ -1091,6 +1091,7 @@ const OP_RADIAL_ITEMS: RadialMenuItem[] = [
 
 const NODE_RADIAL_ITEMS: RadialMenuItem[] = [
   { id: 'direction', icon: 'direction', label: 'Direction' },
+  { id: 'route',     icon: 'route',     label: 'Add Route' },
   { id: 'delete',    icon: 'delete',    label: 'Delete' },
   { id: 'speed',     icon: 'speed',     label: 'Speed' },
   { id: 'hold',      icon: 'hold',      label: 'Hold' },
@@ -1309,6 +1310,8 @@ function handleInput() {
             const wp = op.path.waypoints[menu.wpIdx];
             if (item.id === 'direction') {
               state.interaction = { type: 'setting_facing', opId: op.id, wpIdx: menu.wpIdx };
+            } else if (item.id === 'route') {
+              state.interaction = { type: 'placing_waypoints', opId: op.id };
             } else if (item.id === 'delete') {
               if (op.path.waypoints.length > 2) {
                 op.path.waypoints.splice(menu.wpIdx, 1);
