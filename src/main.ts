@@ -1676,34 +1676,22 @@ function handleInput() {
     // HUD bar clicks already handled above
 
     // All game-world hit tests use worldMouse
+    // Priority: selected operator's body/nodes/path FIRST, then other operators
 
-    // Operator hit-test FIRST (priority over path/node clicks)
-    for (const op of state.operators) {
-      if (!op.deployed) continue;
-      if (distance(worldMouse, op.position) < OP_R + 8) {
-        if (state.selectedOpId === op.id) {
-          // Already selected - start drag (will open radial menu on short click via release handler)
-          state.interaction = { type: 'moving_op', opId: op.id };
-        } else {
-          // Swap to this operator - just select it (show glow ring)
-          state.selectedOpId = op.id;
-          state.popup = null;
-          state.radialMenu = null;
-          state.pendingNode = null;
-          state.interaction = { type: 'idle' };
-        }
-        return;
-      }
-    }
-
-    // Then path node + spline hit-tests for the selected operator
     const selOp = state.operators.find(o => o.id === state.selectedOpId && o.deployed);
     if (selOp) {
+      // 1. Selected operator body
+      if (distance(worldMouse, selOp.position) < OP_R + 8) {
+        state.interaction = { type: 'moving_op', opId: selOp.id };
+        return;
+      }
+      // 2. Selected operator's path nodes
       for (let i = 1; i < selOp.path.waypoints.length; i++) {
         if (distance(worldMouse, selOp.path.waypoints[i].position) < NODE_R + 4) {
           state.interaction = { type: 'dragging_node', opId: selOp.id, wpIdx: i }; return;
         }
       }
+      // 3. Selected operator's path spline (click to insert node)
       const lut = selOp.path.splineLUT;
       if (lut && lut.samples.length > 1) {
         let bestD = Infinity, bestI = -1;
@@ -1721,6 +1709,20 @@ function handleInput() {
           state.interaction = { type: 'dragging_node', opId: selOp.id, wpIdx: insertAfter + 1 };
           return;
         }
+      }
+    }
+
+    // 4. Other operators (swap selection)
+    for (const op of state.operators) {
+      if (!op.deployed) continue;
+      if (op.id === state.selectedOpId) continue; // already handled above
+      if (distance(worldMouse, op.position) < OP_R + 8) {
+        state.selectedOpId = op.id;
+        state.popup = null;
+        state.radialMenu = null;
+        state.pendingNode = null;
+        state.interaction = { type: 'idle' };
+        return;
       }
     }
 
