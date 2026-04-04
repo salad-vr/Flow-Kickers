@@ -1087,6 +1087,11 @@ window.addEventListener('keydown', (e) => {
       state.radialMenu = null;
       state.pendingNode = null;
       state.speedSlider = null;
+      if (state.interaction.type === 'placing_pie') {
+        const inter = state.interaction;
+        const op = state.operators.find(o => o.id === inter.opId);
+        if (op) op.pieTarget = null;
+      }
       if (state.interaction.type === 'placing_waypoints' || state.interaction.type === 'placing_pie' || state.interaction.type === 'speed_slider') state.interaction = { type: 'idle' };
       state.selectedOpId = null;
       break;
@@ -1711,7 +1716,13 @@ function handleInput() {
             if (item.id === 'direction') {
               state.interaction = { type: 'spinning_direction', opId: op.id };
             } else if (item.id === 'pie') {
-              state.interaction = { type: 'placing_pie', opId: op.id };
+              if (op.pieTarget) {
+                // Already has pie - toggle it off
+                op.pieTarget = null;
+                state.interaction = { type: 'idle' };
+              } else {
+                state.interaction = { type: 'placing_pie', opId: op.id };
+              }
             } else if (item.id === 'route') {
               if (op.path.waypoints.length === 0) {
                 op.path.waypoints = [makeWaypoint(op.position)];
