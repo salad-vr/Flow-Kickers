@@ -83,11 +83,13 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
     }
   }
 
-  // Operators
+  // Operators (deployed ones + the one currently being dragged from deploy panel)
+  const deployingOpId = state.interaction.type === 'deploying_op' ? state.interaction.opId : -1;
   for (const op of state.operators) {
-    if (!op.deployed) continue;
+    if (!op.deployed && op.id !== deployingOpId) continue;
     const grey = sid !== null && op.id !== sid;
-    drawOp(ctx, op, op.id === sid, grey);
+    const isDragging = op.id === deployingOpId;
+    drawOp(ctx, op, op.id === sid || isDragging, grey, isDragging);
   }
 
   // ---- Restore from camera transform (back to screen space) ----
@@ -217,13 +219,24 @@ function drawPath(ctx: CanvasRenderingContext2D, op: Operator, grey: boolean, st
   }
 }
 
-function drawOp(ctx: CanvasRenderingContext2D, op: Operator, selected: boolean, grey: boolean) {
+function drawOp(ctx: CanvasRenderingContext2D, op: Operator, selected: boolean, grey: boolean, dragging: boolean = false) {
   const { position: p, angle, color } = op;
   const r = OP_R;
   ctx.save();
-  ctx.translate(p.x, p.y); ctx.rotate(angle);
+  ctx.translate(p.x, p.y);
+
+  // Drag animation: scale up slightly + drop shadow
+  if (dragging) {
+    ctx.scale(1.25, 1.25);
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 16;
+    ctx.shadowOffsetX = 3;
+    ctx.shadowOffsetY = 3;
+  }
+
+  ctx.rotate(angle);
   if (grey) ctx.globalAlpha = 0.25;
-  if (selected) { ctx.shadowColor = color; ctx.shadowBlur = 12; }
+  if (selected && !dragging) { ctx.shadowColor = color; ctx.shadowBlur = 12; }
 
   const tip = r + 3, back = -r + 1, side = r - 1, notch = -r * 0.25;
   ctx.beginPath();
@@ -237,10 +250,8 @@ function drawOp(ctx: CanvasRenderingContext2D, op: Operator, selected: boolean, 
   ctx.strokeStyle = grey ? '#555' : color; ctx.lineWidth = 2; ctx.stroke();
   ctx.strokeStyle = C.opOutline; ctx.lineWidth = 0.8; ctx.stroke();
   ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+  ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
 
-  ctx.fillStyle = grey ? '#888' : '#fff';
-  ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(op.label, -1, 0);
   ctx.globalAlpha = 1;
   ctx.restore();
 }
@@ -292,10 +303,6 @@ function drawDeployPanel(ctx: CanvasRenderingContext2D, state: GameState, H: num
     ctx.fill();
     ctx.strokeStyle = op.color; ctx.lineWidth = 2.5; ctx.stroke();
     ctx.strokeStyle = C.opOutline; ctx.lineWidth = 0.8; ctx.stroke();
-
-    // Label
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(op.label, -1, 0);
     ctx.restore();
   }
 }
@@ -344,6 +351,19 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
   ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   ctx.fillText(mode.toUpperCase(), W - 14, 19);
   ctx.textBaseline = 'alphabetic';
+
+  // Flow Kickers logo top-left
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillStyle = C.accent;
+  ctx.fillText('Flow', 12, 10);
+  const flowW = ctx.measureText('Flow').width;
+  ctx.fillStyle = C.hudBright;
+  ctx.fillText('Kickers', 12 + flowW + 4, 10);
+  ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 function drawHudBtn(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, label: string, color: string, hovered: boolean = false) {

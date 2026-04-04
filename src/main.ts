@@ -506,6 +506,15 @@ function startCustomMission() {
     }
     state.operators.push(createDeployedOperator(pos, i));
   }
+  // Center camera on room
+  if (state.room.floor.length > 0) {
+    let cx = 0, cy = 0;
+    for (const p of state.room.floor) { cx += p.x; cy += p.y; }
+    cx /= state.room.floor.length; cy /= state.room.floor.length;
+    state.camera = { x: cx, y: cy, zoom: 1 };
+  } else {
+    state.camera = { x: 500, y: 350, zoom: 1 };
+  }
   show('game');
 }
 
