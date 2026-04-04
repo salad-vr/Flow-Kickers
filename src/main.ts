@@ -15,6 +15,7 @@ import { cornerFedRoom } from './room/templates';
 import { makeWall, makeThreat, createEmptyRoom } from './room/room';
 import { encodeRoomCode, decodeRoomCode } from './room/roomCode';
 import { initMusic, toggleMute, isMuted } from './audio/musicPlayer';
+import { sfxClick, sfxSelect, sfxConfirm, sfxBack, sfxTick, sfxDelete } from './audio/sfx';
 
 // ---- HTML ----
 const app = document.getElementById('app')!;
@@ -1201,16 +1202,16 @@ for (const name of Object.keys(ROOM_TEMPLATES)) {
   b.className = 'room-card';
   b.innerHTML = `<div class="room-card-preview">${ROOM_PREVIEWS[name] || ''}</div><span class="room-card-name">${name}</span>`;
   if (name === selRoom) b.classList.add('sel');
-  b.onclick = () => { selRoom = name as RoomTemplateName; roomBtns.querySelectorAll('.room-card').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); };
+  b.onclick = () => { sfxSelect(); selRoom = name as RoomTemplateName; roomBtns.querySelectorAll('.room-card').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); };
   roomBtns.appendChild(b);
 }
 // Operator count is always 7 - no selector needed
 
 // Operator count is always 7 for build screen too - no selector needed
 
-document.getElementById('btn-start')!.onclick = startMission;
-document.getElementById('btn-tut')!.onclick = () => { tutSlideIdx = 0; updateTutSlides(); show('tut'); };
-document.getElementById('btn-tut-back')!.onclick = () => show('menu');
+document.getElementById('btn-start')!.onclick = () => { sfxConfirm(); startMission(); };
+document.getElementById('btn-tut')!.onclick = () => { sfxClick(); tutSlideIdx = 0; updateTutSlides(); show('tut'); };
+document.getElementById('btn-tut-back')!.onclick = () => { sfxBack(); show('menu'); };
 
 // ---- Tutorial Slide Deck ----
 let tutSlideIdx = 0;
@@ -1223,7 +1224,7 @@ for (let i = 0; i < tutTotal; i++) {
   const dot = document.createElement('button');
   dot.className = 'tut-dot';
   if (i === 0) dot.classList.add('active');
-  dot.onclick = () => { tutSlideIdx = i; updateTutSlides(); };
+  dot.onclick = () => { sfxTick(); tutSlideIdx = i; updateTutSlides(); };
   tutDotsEl.appendChild(dot);
 }
 
@@ -1236,8 +1237,8 @@ function updateTutSlides() {
   (document.getElementById('tut-next') as HTMLButtonElement).disabled = tutSlideIdx === tutTotal - 1;
 }
 
-document.getElementById('tut-prev')!.onclick = () => { if (tutSlideIdx > 0) { tutSlideIdx--; updateTutSlides(); } };
-document.getElementById('tut-next')!.onclick = () => { if (tutSlideIdx < tutTotal - 1) { tutSlideIdx++; updateTutSlides(); } };
+document.getElementById('tut-prev')!.onclick = () => { if (tutSlideIdx > 0) { sfxTick(); tutSlideIdx--; updateTutSlides(); } };
+document.getElementById('tut-next')!.onclick = () => { if (tutSlideIdx < tutTotal - 1) { sfxTick(); tutSlideIdx++; updateTutSlides(); } };
 
 // Swipe support
 let tutTouchX = 0;
@@ -1267,6 +1268,7 @@ document.getElementById('btn-load-code')!.onclick = () => {
   if (!code) { errorEl.textContent = 'Paste a room code first'; return; }
   try {
     const d = decodeRoomCode(code);
+    sfxConfirm();
     // Auto-save as a custom map so it appears under "Your Custom Maps"
     saveImportedMap(d);
     startSavedMapMission(d);
@@ -1280,14 +1282,15 @@ document.getElementById('menu-code-input')!.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('btn-load-code')!.click();
 });
 document.getElementById('btn-build')!.onclick = () => {
+  sfxClick();
   customRoom = createEmptyRoom();
   buildHistory = [];
   show('build');
 };
-document.getElementById('build-back')!.onclick = () => show('menu');
-document.getElementById('build-save')!.onclick = openSaveModal;
-document.getElementById('build-undo')!.onclick = undoHistory;
-document.getElementById('build-clear')!.onclick = () => { pushHistory(); customRoom = createEmptyRoom(); };
+document.getElementById('build-back')!.onclick = () => { sfxBack(); show('menu'); };
+document.getElementById('build-save')!.onclick = () => { sfxClick(); openSaveModal(); };
+document.getElementById('build-undo')!.onclick = () => { sfxClick(); undoHistory(); };
+document.getElementById('build-clear')!.onclick = () => { sfxDelete(); pushHistory(); customRoom = createEmptyRoom(); };
 
 // Build tools
 document.querySelectorAll('.build-tool').forEach(btn => {
@@ -2942,6 +2945,37 @@ function renderBuild() {
     ctx.fillText('THREAT', t.position.x, t.position.y + 10);
   }
 
+  // ---- Objects (blocks/stairs) ----
+  for (const obj of customRoom.objects) {
+    if (obj.type === 'block') {
+      ctx.fillStyle = 'rgba(100,85,65,0.6)';
+      ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+      ctx.strokeStyle = 'rgba(140,120,90,0.8)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
+    } else if (obj.type === 'stairs') {
+      ctx.fillStyle = 'rgba(70,80,90,0.5)';
+      ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+      ctx.strokeStyle = 'rgba(120,130,140,0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
+      const steps = Math.max(2, Math.round(Math.min(obj.w, obj.h) / 10));
+      const isWide = obj.w > obj.h;
+      ctx.strokeStyle = 'rgba(160,170,180,0.5)';
+      ctx.lineWidth = 1;
+      for (let si = 1; si < steps; si++) {
+        const frac = si / steps;
+        if (isWide) {
+          const lx = obj.x + obj.w * frac;
+          ctx.beginPath(); ctx.moveTo(lx, obj.y); ctx.lineTo(lx, obj.y + obj.h); ctx.stroke();
+        } else {
+          const ly = obj.y + obj.h * frac;
+          ctx.beginPath(); ctx.moveTo(obj.x, ly); ctx.lineTo(obj.x + obj.w, ly); ctx.stroke();
+        }
+      }
+    }
+  }
+
   // ---- Entry Points ----
   for (let i = 0; i < customRoom.entryPoints.length; i++) {
     const ep = customRoom.entryPoints[i];
@@ -2954,6 +2988,71 @@ function renderBuild() {
     ctx.fillText('\u2193', ep.x, ep.y);
     ctx.fillStyle = 'rgba(68,187,170,0.5)'; ctx.font = '8px monospace'; ctx.textBaseline = 'top';
     ctx.fillText(`ENTRY ${i + 1}`, ep.x, ep.y + 16);
+  }
+
+  // ---- Preview: Object/Stairs drag ----
+  if ((buildTool === 'object' || buildTool === 'stairs') && buildDragStart && buildDragEnd) {
+    const s = buildDragStart, e = buildDragEnd;
+    const x0 = Math.min(s.x, e.x), y0 = Math.min(s.y, e.y), x1 = Math.max(s.x, e.x), y1 = Math.max(s.y, e.y);
+    const rw = x1 - x0, rh = y1 - y0;
+    if (buildTool === 'stairs') {
+      ctx.fillStyle = 'rgba(70,80,90,0.35)';
+      ctx.fillRect(x0, y0, rw, rh);
+      ctx.strokeStyle = 'rgba(120,130,140,0.7)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 4]); ctx.strokeRect(x0, y0, rw, rh); ctx.setLineDash([]);
+      // Preview stair lines
+      const steps = Math.max(2, Math.round(Math.min(rw, rh) / 10));
+      const isWide = rw > rh;
+      ctx.strokeStyle = 'rgba(160,170,180,0.4)';
+      ctx.lineWidth = 1;
+      for (let si = 1; si < steps; si++) {
+        const frac = si / steps;
+        if (isWide) {
+          const lx = x0 + rw * frac;
+          ctx.beginPath(); ctx.moveTo(lx, y0); ctx.lineTo(lx, y1); ctx.stroke();
+        } else {
+          const ly = y0 + rh * frac;
+          ctx.beginPath(); ctx.moveTo(x0, ly); ctx.lineTo(x1, ly); ctx.stroke();
+        }
+      }
+    } else {
+      ctx.fillStyle = 'rgba(100,85,65,0.35)';
+      ctx.fillRect(x0, y0, rw, rh);
+      ctx.strokeStyle = 'rgba(140,120,90,0.7)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 4]); ctx.strokeRect(x0, y0, rw, rh); ctx.setLineDash([]);
+    }
+    ctx.fillStyle = 'rgba(68,187,170,0.7)'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText((buildTool === 'stairs' ? 'STAIRS' : 'OBJECT') + ` ${rw}\u00D7${rh}`, (x0+x1)/2, y0-8);
+  }
+
+  // ---- Preview: Eraser drag ----
+  if (buildTool === 'eraser' && buildDragStart && buildDragEnd) {
+    const s = buildDragStart, e = buildDragEnd;
+    const x0 = Math.min(s.x, e.x), y0 = Math.min(s.y, e.y), x1 = Math.max(s.x, e.x), y1 = Math.max(s.y, e.y);
+    // Highlight individual grid cells that will be erased
+    const sx0 = snapGrid(x0), sy0 = snapGrid(y0);
+    ctx.fillStyle = 'rgba(255,60,40,0.15)';
+    for (let cx = sx0; cx < x1; cx += GRID) {
+      for (let cy = sy0; cy < y1; cy += GRID) {
+        ctx.fillRect(cx, cy, GRID, GRID);
+      }
+    }
+    // Drag rectangle outline
+    ctx.strokeStyle = 'rgba(255,80,60,0.6)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.setLineDash([]);
+  }
+
+  // ---- Floor cut cells visualization ----
+  if (buildTool === 'eraser') {
+    ctx.fillStyle = 'rgba(255,60,40,0.08)';
+    for (const fc of customRoom.floorCut) {
+      ctx.fillRect(fc.x, fc.y, GRID, GRID);
+    }
   }
 
   // Snap cursor dot
