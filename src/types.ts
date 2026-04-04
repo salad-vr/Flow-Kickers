@@ -5,8 +5,30 @@ export interface DoorEntry { pos: number; open: boolean; }
 export interface WallSegment { a: Vec2; b: Vec2; doors: DoorEntry[]; }
 export interface ThreatMarker { position: Vec2; neutralized: boolean; neutralizeTimer: number; }
 /** Filled rectangle object (furniture, obstacle) */
-export interface RoomObject { x: number; y: number; w: number; h: number; type: 'block' | 'stairs'; }
-export interface Room { walls: WallSegment[]; threats: ThreatMarker[]; floor: Vec2[]; name: string; entryPoints: Vec2[]; objects: RoomObject[]; floorCut: Vec2[]; }
+export interface RoomObject {
+  x: number; y: number; w: number; h: number;
+  type: 'block' | 'stairs';
+  /** For stairs: which floors this staircase connects. e.g. [0,1] = ground to first floor */
+  connectsFloors?: [number, number];
+}
+
+/** Data for a single floor layer (upper floors). Ground floor uses Room's own walls/threats/etc. */
+export interface FloorLayer {
+  level: number;           // 1, 2, 3... (ground = 0, stored on Room directly)
+  bounds: { x: number; y: number; w: number; h: number }; // footprint rectangle
+  walls: WallSegment[];
+  threats: ThreatMarker[];
+  objects: RoomObject[];
+  floor: Vec2[];
+  floorCut: Vec2[];
+}
+
+export interface Room {
+  walls: WallSegment[]; threats: ThreatMarker[]; floor: Vec2[];
+  name: string; entryPoints: Vec2[]; objects: RoomObject[]; floorCut: Vec2[];
+  /** Upper floor layers (ground floor = level 0 is the Room's own walls/threats/etc) */
+  floors: FloorLayer[];
+}
 
 export interface Waypoint {
   position: Vec2;
@@ -15,6 +37,8 @@ export interface Waypoint {
   hold: boolean;
   goCode: GoCode | null;
   tempo: number;
+  /** Which floor level this waypoint is on (0 = ground) */
+  floorLevel: number;
 }
 export type GoCode = 'A' | 'B' | 'C';
 export interface WaypointPath { waypoints: Waypoint[]; splineLUT: SplineLUT | null; color: string; }
@@ -29,6 +53,10 @@ export interface Operator {
   pieTarget: Vec2 | null;
   /** Smoothed display position for aesthetic interpolation */
   smoothPosition: Vec2;
+  /** Which floor level this operator is currently on (0 = ground) */
+  currentFloor: number;
+  /** Starting floor level (for reset) */
+  startFloor: number;
 }
 
 export type AppScreen = 'menu' | 'game';
@@ -147,8 +175,8 @@ export interface GameState {
   viewingStageIndex: number;
 }
 
-export function makeWaypoint(pos: Vec2): Waypoint {
-  return { position: { x: pos.x, y: pos.y }, facingOverride: null, lookTarget: null, hold: false, goCode: null, tempo: 1 };
+export function makeWaypoint(pos: Vec2, floorLevel = 0): Waypoint {
+  return { position: { x: pos.x, y: pos.y }, facingOverride: null, lookTarget: null, hold: false, goCode: null, tempo: 1, floorLevel };
 }
 
 export const C = {

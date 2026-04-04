@@ -89,10 +89,10 @@ app.innerHTML = `
             <!-- Deploy panel -->
             <rect x="8" y="132" width="130" height="24" rx="6" fill="rgba(12,21,37,0.95)" stroke="#e8dfc6" stroke-width="1" stroke-dasharray="5 4"/>
             <text x="73" y="141" text-anchor="middle" fill="#8a836e" font-size="4.5" font-family="monospace">DRAG OPERATORS INTO PLACE</text>
-            <!-- Ops in panel -->
-            <g transform="translate(30,148)"><polygon points="12,0 -8,-8 -2.25,0 -8,8" fill="#c8bb96" stroke="#5588cc" stroke-width="2"/></g>
-            <g transform="translate(65,148)"><polygon points="12,0 -8,-8 -2.25,0 -8,8" fill="#c8bb96" stroke="#cc7744" stroke-width="2"/></g>
-            <g transform="translate(100,148)"><polygon points="12,0 -8,-8 -2.25,0 -8,8" fill="#c8bb96" stroke="#55aa66" stroke-width="2"/></g>
+            <!-- Ops in panel (smaller, matching deploy panel scale) -->
+            <g transform="translate(30,148) scale(0.75)"><polygon points="12,0 -8,-8 -2.25,0 -8,8" fill="#c8bb96" stroke="#5588cc" stroke-width="2"/></g>
+            <g transform="translate(58,148) scale(0.75)"><polygon points="12,0 -8,-8 -2.25,0 -8,8" fill="#c8bb96" stroke="#cc7744" stroke-width="2"/></g>
+            <g transform="translate(86,148) scale(0.75)"><polygon points="12,0 -8,-8 -2.25,0 -8,8" fill="#c8bb96" stroke="#55aa66" stroke-width="2"/></g>
             <!-- Drag arrow -->
             <path d="M42,142 C55,125 120,90 165,80" fill="none" stroke="#e8dfc6" stroke-width="1" stroke-dasharray="4 3" opacity=".4"/>
             <polygon points="168,79 163,83 164,76" fill="#e8dfc6" opacity=".4"/>
@@ -113,27 +113,26 @@ app.innerHTML = `
         <div class="tut-visual">
           <svg viewBox="0 0 280 160" class="tut-svg">
             <rect x="0" y="0" width="280" height="160" rx="6" fill="#0c1525"/>
-            <rect x="40" y="15" width="210" height="120" rx="2" fill="#d4c9a8" opacity=".15"/>
-            <rect x="40" y="15" width="210" height="120" rx="2" fill="none" stroke="#1e3352" stroke-width="4"/>
-            <!-- Deployed op (selected) -->
-            <g transform="translate(70,110) rotate(-45)"><polygon points="12,0 -8,-8 -2.25,0 -8,8" fill="#c8bb96" stroke="#5588cc" stroke-width="2"/></g>
-            <circle cx="70" cy="110" r="14" fill="none" stroke="#5588cc" stroke-width="1" opacity=".3"/>
-            <!-- FOV cone -->
-            <path d="M70,110 L30,80 L60,65 Z" fill="#5588cc" opacity=".08"/>
-            <!-- Path with dashes -->
-            <path d="M70,110 C90,90 120,55 155,48 S200,50 220,65" fill="none" stroke="#5588cc" stroke-width="2" stroke-dasharray="8 5" opacity=".65" stroke-linecap="round"/>
+            <!-- Room -->
+            <rect x="20" y="12" width="240" height="120" rx="2" fill="#d4c9a8" opacity=".12"/>
+            <rect x="20" y="12" width="240" height="120" rx="2" fill="none" stroke="#1e3352" stroke-width="3"/>
+            <!-- Deployed op (selected, bottom-left) -->
+            <g transform="translate(50,108) rotate(-50)"><polygon points="10,0 -7,-7 -2,0 -7,7" fill="#c8bb96" stroke="#5588cc" stroke-width="1.8"/></g>
+            <circle cx="50" cy="108" r="13" fill="none" stroke="#5588cc" stroke-width="0.8" opacity=".3"/>
+            <!-- Path -->
+            <path d="M50,108 C80,85 120,50 165,42 S220,45 240,55" fill="none" stroke="#5588cc" stroke-width="1.8" stroke-dasharray="7 4" opacity=".6" stroke-linecap="round"/>
             <!-- Waypoint nodes -->
-            <circle cx="120" cy="62" r="5" fill="#5588cc" stroke="#e8dfc6" stroke-width="1.5"/>
-            <circle cx="155" cy="48" r="5" fill="#5588cc" stroke="#e8dfc6" stroke-width="1.5"/>
-            <circle cx="220" cy="65" r="5" fill="#5588cc" stroke="#e8dfc6" stroke-width="1.5"/>
-            <!-- Confirm/cancel on last node -->
-            <rect x="228" y="57" width="14" height="14" rx="4" fill="rgba(85,170,102,0.9)" stroke="rgba(120,200,140,0.8)" stroke-width="0.8"/>
-            <polyline points="231,64 234,67 239,60" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            <rect x="206" y="57" width="14" height="14" rx="4" fill="rgba(204,68,51,0.9)" stroke="rgba(230,100,80,0.8)" stroke-width="0.8"/>
-            <line x1="209" y1="60" x2="217" y2="68" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-            <line x1="217" y1="60" x2="209" y2="68" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="120" cy="55" r="4.5" fill="#5588cc" stroke="#e8dfc6" stroke-width="1.2"/>
+            <circle cx="165" cy="42" r="4.5" fill="#5588cc" stroke="#e8dfc6" stroke-width="1.2"/>
+            <circle cx="240" cy="55" r="4.5" fill="#5588cc" stroke="#e8dfc6" stroke-width="1.2"/>
+            <!-- Confirm/cancel next to last node -->
+            <rect x="247" y="48" width="12" height="12" rx="3" fill="rgba(85,170,102,0.9)" stroke="rgba(120,200,140,0.7)" stroke-width="0.7"/>
+            <polyline points="250,54 252.5,56.5 257,51" fill="none" stroke="white" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="228" y="48" width="12" height="12" rx="3" fill="rgba(204,68,51,0.9)" stroke="rgba(230,100,80,0.7)" stroke-width="0.7"/>
+            <line x1="231" y1="51" x2="237" y2="57" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="237" y1="51" x2="231" y2="57" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
             <!-- Hint -->
-            <text x="155" y="145" text-anchor="middle" fill="#8a836e" font-size="5" font-family="monospace">click to select, then click to place waypoints</text>
+            <text x="140" y="145" text-anchor="middle" fill="#8a836e" font-size="4.5" font-family="monospace">click to select, then click to place waypoints</text>
           </svg>
         </div>
         <div class="tut-text">
@@ -203,40 +202,48 @@ app.innerHTML = `
         <div class="tut-visual">
           <svg viewBox="0 0 280 160" class="tut-svg">
             <rect x="0" y="0" width="280" height="160" rx="6" fill="#0c1525"/>
-            <rect x="30" y="10" width="220" height="115" rx="2" fill="#d4c9a8" opacity=".1"/>
-            <rect x="30" y="10" width="220" height="115" rx="2" fill="none" stroke="#1e3352" stroke-width="3"/>
-            <!-- Operator -->
-            <g transform="translate(55,95) rotate(-40)"><polygon points="12,0 -8,-8 -2.25,0 -8,8" fill="#c8bb96" stroke="#cc7744" stroke-width="2"/></g>
-            <!-- Path -->
-            <path d="M55,95 C75,70 110,40 150,38 S200,50 225,35" fill="none" stroke="#cc7744" stroke-width="2" stroke-dasharray="8 5" opacity=".65" stroke-linecap="round"/>
-            <!-- Normal node -->
-            <circle cx="110" cy="45" r="5" fill="#cc7744" stroke="#e8dfc6" stroke-width="1.5"/>
-            <!-- Node with facing override -->
-            <circle cx="150" cy="38" r="5" fill="#cc7744" stroke="#e8dfc6" stroke-width="1.5"/>
-            <line x1="150" y1="38" x2="166" y2="30" stroke="#cc7744" stroke-width="1.5"/>
-            <polygon points="168,29 163,33 164,27" fill="#cc7744"/>
-            <text x="168" y="24" text-anchor="middle" fill="#8a836e" font-size="4.5" font-family="monospace">facing</text>
-            <!-- Hold node -->
-            <circle cx="195" cy="43" r="5" fill="#cc7744" stroke="#e8dfc6" stroke-width="1.5"/>
-            <circle cx="195" cy="43" r="9" fill="none" stroke="#cc7744" stroke-width="1.5"/>
-            <text x="195" y="30" text-anchor="middle" fill="#cc7744" font-size="4.5" font-family="monospace">hold</text>
-            <!-- End node -->
-            <circle cx="225" cy="35" r="5" fill="#cc7744" stroke="#e8dfc6" stroke-width="1.5"/>
-            <!-- Look target from node to point -->
-            <line x1="110" y1="45" x2="70" y2="25" stroke="#6699bb" stroke-width="1" stroke-dasharray="5 4" opacity=".5"/>
-            <circle cx="70" cy="25" r="5" fill="none" stroke="#6699bb" stroke-width="1"/>
-            <line x1="67" y1="25" x2="73" y2="25" stroke="#6699bb" stroke-width="1"/>
-            <line x1="70" y1="22" x2="70" y2="28" stroke="#6699bb" stroke-width="1"/>
-            <text x="70" y="17" text-anchor="middle" fill="#6699bb" font-size="4.5" font-family="monospace">look-at</text>
-            <!-- Speed label on a node -->
-            <text x="225" y="46" text-anchor="middle" fill="#cc5544" font-size="6" font-family="monospace" font-weight="bold">2x</text>
-            <!-- Hint -->
-            <text x="140" y="138" text-anchor="middle" fill="#8a836e" font-size="5" font-family="monospace">drag nodes to move, right-click to set facing</text>
+            <!-- Room background -->
+            <rect x="15" y="8" width="250" height="130" rx="2" fill="#d4c9a8" opacity=".08"/>
+            <rect x="15" y="8" width="250" height="130" rx="2" fill="none" stroke="#1e3352" stroke-width="2.5"/>
+            <!-- Operator bottom-left -->
+            <g transform="translate(40,115) rotate(-50)"><polygon points="10,0 -7,-7 -2,0 -7,7" fill="#c8bb96" stroke="#5588cc" stroke-width="1.8"/></g>
+            <!-- Path curving up across the room -->
+            <path d="M40,115 C60,90 90,60 130,50 S175,45 210,55 S240,60 250,50" fill="none" stroke="#5588cc" stroke-width="1.8" stroke-dasharray="7 4" opacity=".55" stroke-linecap="round"/>
+
+            <!-- Node 1: normal -->
+            <circle cx="90" cy="63" r="4.5" fill="#5588cc" stroke="#e8dfc6" stroke-width="1.2"/>
+
+            <!-- Node 2: with look-at target -->
+            <circle cx="130" cy="50" r="4.5" fill="#5588cc" stroke="#e8dfc6" stroke-width="1.2"/>
+            <line x1="130" y1="50" x2="130" y2="20" stroke="#6699bb" stroke-width="0.8" stroke-dasharray="4 3" opacity=".6"/>
+            <circle cx="130" cy="20" r="4" fill="none" stroke="#6699bb" stroke-width="0.8"/>
+            <line x1="127.5" y1="20" x2="132.5" y2="20" stroke="#6699bb" stroke-width="0.8"/>
+            <line x1="130" y1="17.5" x2="130" y2="22.5" stroke="#6699bb" stroke-width="0.8"/>
+            <text x="140" y="18" fill="#6699bb" font-size="4" font-family="monospace">look-at</text>
+
+            <!-- Node 3: with facing arrow -->
+            <circle cx="175" cy="45" r="4.5" fill="#5588cc" stroke="#e8dfc6" stroke-width="1.2"/>
+            <line x1="175" y1="45" x2="192" y2="35" stroke="#5588cc" stroke-width="1.3"/>
+            <polygon points="194,34 189,37 190,32" fill="#5588cc"/>
+            <text x="195" y="30" fill="#8a836e" font-size="4" font-family="monospace">facing</text>
+
+            <!-- Node 4: hold with ring -->
+            <circle cx="210" cy="55" r="4.5" fill="#cc7744" stroke="#e8dfc6" stroke-width="1.2"/>
+            <circle cx="210" cy="55" r="8.5" fill="none" stroke="#cc7744" stroke-width="1.2"/>
+            <text x="210" y="70" text-anchor="middle" fill="#cc7744" font-size="4" font-family="monospace">hold</text>
+
+            <!-- Node 5: end with speed label -->
+            <circle cx="250" cy="50" r="4.5" fill="#5588cc" stroke="#e8dfc6" stroke-width="1.2"/>
+            <text x="250" y="42" text-anchor="middle" fill="#cc5544" font-size="5" font-family="monospace" font-weight="bold">2x</text>
+            <text x="250" y="62" text-anchor="middle" fill="#8a836e" font-size="4" font-family="monospace">speed</text>
+
+            <!-- Hint at bottom -->
+            <text x="140" y="148" text-anchor="middle" fill="#8a836e" font-size="4.5" font-family="monospace">drag nodes to reposition, right-click to set facing</text>
           </svg>
         </div>
         <div class="tut-text">
           <h3 class="tut-slide-title">Nodes & Direction</h3>
-          <p><b>Drag</b> nodes to reposition. <b>Right-click + drag</b> from a node to set its facing. Use the node menu for <b>Hold</b> (pauses until triggered), <b>Look-At</b> (locks gaze on a point), and <b>Speed</b> (0.2x - 3x).</p>
+          <p><b>Drag</b> nodes to reposition them. <b>Right-click + drag</b> to set facing direction. Use the node menu for <b>Hold</b> (pauses until triggered), <b>Look-At</b> (locks gaze on a point), and <b>Speed</b> (0.2x - 3x).</p>
         </div>
       </div>
 
@@ -245,39 +252,53 @@ app.innerHTML = `
         <div class="tut-visual">
           <svg viewBox="0 0 280 160" class="tut-svg">
             <rect x="0" y="0" width="280" height="160" rx="6" fill="#0c1525"/>
-            <rect x="40" y="10" width="200" height="110" rx="2" fill="#d4c9a8" opacity=".12"/>
-            <rect x="40" y="10" width="200" height="110" rx="2" fill="none" stroke="#1e3352" stroke-width="4"/>
-            <!-- Faded path behind -->
-            <path d="M75,100 C95,75 130,45 170,40 S210,50 225,35" fill="none" stroke="#5588cc" stroke-width="1.5" opacity=".2" stroke-dasharray="6 4"/>
-            <!-- FOV cone -->
-            <path d="M150,55 L200,25 L195,80 Z" fill="#5588cc" opacity=".1"/>
-            <line x1="150" y1="55" x2="200" y2="25" stroke="#5588cc" stroke-width="0.8" opacity=".2"/>
-            <line x1="150" y1="55" x2="195" y2="80" stroke="#5588cc" stroke-width="0.8" opacity=".2"/>
-            <!-- Operator mid-route -->
-            <g transform="translate(150,55) rotate(-20)"><polygon points="12,0 -8,-8 -2.25,0 -8,8" fill="#c8bb96" stroke="#5588cc" stroke-width="2"/></g>
+            <!-- Room -->
+            <rect x="15" y="8" width="250" height="114" rx="2" fill="#d4c9a8" opacity=".1"/>
+            <rect x="15" y="8" width="250" height="114" rx="2" fill="none" stroke="#1e3352" stroke-width="3"/>
+            <!-- Faded path showing completed route -->
+            <path d="M50,105 C70,80 100,50 145,42 S195,40 225,55" fill="none" stroke="#5588cc" stroke-width="1.2" opacity=".15" stroke-dasharray="5 3"/>
+            <!-- Second op faded path -->
+            <path d="M60,85 C85,65 120,40 165,35 S210,30 240,38" fill="none" stroke="#cc7744" stroke-width="1.2" opacity=".15" stroke-dasharray="5 3"/>
+            <!-- FOV cone for operator A -->
+            <path d="M155,48 L210,22 L205,72 Z" fill="#5588cc" opacity=".08"/>
+            <line x1="155" y1="48" x2="210" y2="22" stroke="#5588cc" stroke-width="0.6" opacity=".15"/>
+            <line x1="155" y1="48" x2="205" y2="72" stroke="#5588cc" stroke-width="0.6" opacity=".15"/>
+            <!-- Operator A mid-route -->
+            <g transform="translate(155,48) rotate(-15)"><polygon points="10,0 -7,-7 -2,0 -7,7" fill="#c8bb96" stroke="#5588cc" stroke-width="1.8"/></g>
+            <!-- FOV cone for operator B -->
+            <path d="M130,38 L175,15 L178,58 Z" fill="#cc7744" opacity=".06"/>
+            <!-- Operator B mid-route -->
+            <g transform="translate(130,38) rotate(-10)"><polygon points="10,0 -7,-7 -2,0 -7,7" fill="#c8bb96" stroke="#cc7744" stroke-width="1.8"/></g>
             <!-- Threat (active) -->
-            <g transform="translate(185,40)">
-              <circle r="12" fill="rgba(200,60,50,0.15)"/>
+            <g transform="translate(200,35)">
+              <circle r="10" fill="rgba(200,60,50,0.15)"/>
               <line x1="-5" y1="-5" x2="5" y2="5" stroke="#cc4433" stroke-width="2.5" stroke-linecap="round"/>
               <line x1="5" y1="-5" x2="-5" y2="5" stroke="#cc4433" stroke-width="2.5" stroke-linecap="round"/>
             </g>
             <!-- Threat (neutralized) -->
-            <g transform="translate(115,30)" opacity=".35">
-              <line x1="-5" y1="-5" x2="5" y2="5" stroke="#3a3a44" stroke-width="2" stroke-linecap="round"/>
-              <line x1="5" y1="-5" x2="-5" y2="5" stroke="#3a3a44" stroke-width="2" stroke-linecap="round"/>
+            <g transform="translate(90,28)" opacity=".3">
+              <line x1="-4" y1="-4" x2="4" y2="4" stroke="#3a3a44" stroke-width="2" stroke-linecap="round"/>
+              <line x1="4" y1="-4" x2="-4" y2="4" stroke="#3a3a44" stroke-width="2" stroke-linecap="round"/>
             </g>
-            <!-- HUD bar -->
-            <rect x="0" y="126" width="280" height="34" fill="rgba(12,21,37,0.92)"/>
-            <line x1="0" y1="126" x2="280" y2="126" stroke="#1e3352" stroke-width="1"/>
+            <!-- Another neutralized -->
+            <g transform="translate(240,70)" opacity=".3">
+              <line x1="-4" y1="-4" x2="4" y2="4" stroke="#3a3a44" stroke-width="2" stroke-linecap="round"/>
+              <line x1="4" y1="-4" x2="-4" y2="4" stroke="#3a3a44" stroke-width="2" stroke-linecap="round"/>
+            </g>
+            <!-- HUD bar at bottom of scene -->
+            <rect x="15" y="122" width="250" height="26" rx="0 0 2 2" fill="rgba(12,21,37,0.92)"/>
+            <line x1="15" y1="122" x2="265" y2="122" stroke="#1e3352" stroke-width="0.8"/>
             <!-- GO button -->
-            <rect x="120" y="132" width="50" height="20" rx="5" fill="rgba(18,30,48,0.85)" stroke="#e8dfc6" stroke-width="1"/>
-            <text x="145" y="145" text-anchor="middle" fill="#e8dfc6" font-size="8" font-weight="bold" font-family="monospace">GO!</text>
-            <!-- RESET -->
-            <rect x="178" y="132" width="44" height="20" rx="5" fill="rgba(18,30,48,0.85)" stroke="#1e3352" stroke-width="1"/>
-            <text x="200" y="145" text-anchor="middle" fill="#8a836e" font-size="7" font-weight="bold" font-family="monospace">RESET</text>
-            <!-- Keyboard hint -->
-            <rect x="92" y="113" width="30" height="12" rx="3" fill="#274166"/>
-            <text x="107" y="121" text-anchor="middle" fill="#e8dfc6" font-size="5" font-family="monospace">SPACE</text>
+            <rect x="110" y="127" width="40" height="16" rx="4" fill="rgba(18,30,48,0.85)" stroke="#e8dfc6" stroke-width="0.8"/>
+            <text x="130" y="138" text-anchor="middle" fill="#e8dfc6" font-size="7" font-weight="bold" font-family="monospace">GO!</text>
+            <!-- PAUSE -->
+            <rect x="155" y="127" width="42" height="16" rx="4" fill="rgba(18,30,48,0.85)" stroke="#1e3352" stroke-width="0.8"/>
+            <text x="176" y="138" text-anchor="middle" fill="#8a836e" font-size="6" font-weight="bold" font-family="monospace">RESET</text>
+            <!-- Room name -->
+            <text x="25" y="137" fill="#e8dfc6" font-size="5" font-weight="bold" font-family="monospace">CORNER FED</text>
+            <!-- SPACE keycap hint below -->
+            <rect x="116" y="147" width="28" height="10" rx="2.5" fill="#274166"/>
+            <text x="130" y="154.5" text-anchor="middle" fill="#e8dfc6" font-size="4.5" font-family="monospace">SPACE</text>
           </svg>
         </div>
         <div class="tut-text">
