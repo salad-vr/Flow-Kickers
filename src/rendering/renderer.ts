@@ -57,6 +57,36 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
     for (let y = gy0; y <= viewBottom; y += gridStep) { ctx.beginPath(); ctx.moveTo(viewLeft, y); ctx.lineTo(viewRight, y); ctx.stroke(); }
   }
 
+  // Room objects (blocks/stairs)
+  for (const obj of state.room.objects || []) {
+    if (obj.type === 'block') {
+      ctx.fillStyle = 'rgba(80,70,55,0.7)';
+      ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+      ctx.strokeStyle = 'rgba(60,50,40,0.8)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
+    } else if (obj.type === 'stairs') {
+      ctx.fillStyle = 'rgba(55,60,70,0.6)';
+      ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+      ctx.strokeStyle = 'rgba(80,85,95,0.7)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
+      const steps = Math.max(2, Math.round(Math.min(obj.w, obj.h) / 10));
+      const isWide = obj.w > obj.h;
+      ctx.strokeStyle = 'rgba(120,125,135,0.4)';
+      for (let i = 1; i < steps; i++) {
+        const frac = i / steps;
+        if (isWide) {
+          const lx = obj.x + obj.w * frac;
+          ctx.beginPath(); ctx.moveTo(lx, obj.y); ctx.lineTo(lx, obj.y + obj.h); ctx.stroke();
+        } else {
+          const ly = obj.y + obj.h * frac;
+          ctx.beginPath(); ctx.moveTo(obj.x, ly); ctx.lineTo(obj.x + obj.w, ly); ctx.stroke();
+        }
+      }
+    }
+  }
+
   // FOV cones (clipped to floor area so they don't bleed into the void)
   const isExecMode = state.mode === 'executing' || state.mode === 'paused';
   if (fl.length > 0) {

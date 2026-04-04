@@ -13,6 +13,7 @@ import { renderGame, resetSharePanelAnim, SHARE_BTN, getShareBtnX } from './rend
 import { exportGIF, downloadBlob } from './export/gifExporter';
 import { cornerFedRoom } from './room/templates';
 import { makeWall, makeThreat, createEmptyRoom } from './room/room';
+import { encodeRoomCode, decodeRoomCode } from './room/roomCode';
 
 // ---- HTML ----
 const app = document.getElementById('app')!;
@@ -363,10 +364,12 @@ app.innerHTML = `
         </div>
       </div>
       <div class="build-tools-section">
-        <label class="menu-label">MARKERS</label>
+        <label class="menu-label">MORE</label>
         <div class="build-tools-grid">
-          <button class="build-tool" data-tool="threat"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="4.5" x2="10" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="13" r="1.2" fill="currentColor"/></svg></div><span>Threat</span><kbd>5</kbd></button>
-          <button class="build-tool" data-tool="entry"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M10 3L10 13M6 9L10 13L14 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="4" y1="17" x2="16" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div><span>Entry</span><kbd>6</kbd></button>
+          <button class="build-tool" data-tool="object"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" fill="currentColor" opacity=".3" stroke="currentColor" stroke-width="1.5"/></svg></div><span>Object</span><kbd>5</kbd></button>
+          <button class="build-tool" data-tool="stairs"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M3 17h4v-4h4v-4h4v-4h2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></div><span>Stairs</span><kbd>6</kbd></button>
+          <button class="build-tool" data-tool="threat"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="4.5" x2="10" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="13" r="1.2" fill="currentColor"/></svg></div><span>Threat</span><kbd>7</kbd></button>
+          <button class="build-tool" data-tool="eraser"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><rect x="4" y="4" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/><line x1="4" y1="4" x2="16" y2="16" stroke="currentColor" stroke-width="1.5"/></svg></div><span>Eraser</span><kbd>8</kbd></button>
         </div>
       </div>
       <div class="build-tools-section">
@@ -465,7 +468,7 @@ const state: GameState = {
 
 // ---- Build state ----
 let customRoom: Room = createEmptyRoom();
-type BuildToolType = 'line' | 'square' | 'delete' | 'door' | 'threat' | 'entry' | 'room';
+type BuildToolType = 'line' | 'square' | 'delete' | 'door' | 'threat' | 'object' | 'stairs' | 'eraser' | 'room';
 let buildTool: BuildToolType = 'line';
 let buildSelectedStamp: StampName = 'Simple Box';
 let buildDragStart: Vec2 | null = null;
@@ -495,6 +498,7 @@ function pushHistory() {
   buildHistory.push(JSON.stringify({
     w: customRoom.walls, t: customRoom.threats,
     e: customRoom.entryPoints, f: customRoom.floor,
+    o: customRoom.objects, fc: customRoom.floorCut,
   }));
   if (buildHistory.length > 50) buildHistory.shift();
 }
@@ -503,6 +507,7 @@ function undoHistory() {
   const d = JSON.parse(buildHistory.pop()!);
   customRoom.walls = d.w; customRoom.threats = d.t;
   customRoom.entryPoints = d.e; customRoom.floor = d.f;
+  customRoom.objects = d.o || []; customRoom.floorCut = d.fc || [];
 }
 
 // ---- Saved Maps (localStorage) ----
@@ -512,7 +517,9 @@ interface SavedMap {
     w: any[][];
     t: number[][];
     e: number[][];
-    f: number[][];
+    f?: number[][];
+    o?: any[];
+    fc?: any[];
   };
   createdAt: number;
 }
@@ -547,6 +554,26 @@ function saveCurrentMap(name: string) {
   refreshCustomMapsUI();
 }
 
+function saveImportedMap(mapData: SavedMap['data']) {
+  // Check if this exact map already exists (avoid duplicates)
+  const maps = loadSavedMaps();
+  const newJson = JSON.stringify(mapData.w);
+  const alreadyExists = maps.some(m => JSON.stringify(m.data.w) === newJson);
+  if (alreadyExists) return;
+
+  const wallCount = (mapData.w || []).length;
+  const threatCount = (mapData.t || []).length;
+  const name = `Imported (${wallCount}w ${threatCount}t)`;
+  const saved: SavedMap = {
+    name,
+    data: mapData,
+    createdAt: Date.now(),
+  };
+  maps.push(saved);
+  saveMapsToStorage(maps);
+  refreshCustomMapsUI();
+}
+
 function deleteSavedMap(index: number) {
   const maps = loadSavedMaps();
   maps.splice(index, 1);
@@ -569,12 +596,16 @@ function roomFromSavedMap(mapData: SavedMap['data']): Room {
     threats: (mapData.t || []).map((t: number[]) => makeThreat(t[0], t[1])),
     entryPoints: (mapData.e || []).map((e: number[]) => ({ x: e[0], y: e[1] })),
     floor: (mapData.f || []).map((p: number[]) => ({ x: p[0], y: p[1] })),
+    objects: (mapData.o || []).map((o: any) => ({ x: o[0] ?? o.x, y: o[1] ?? o.y, w: o[2] ?? o.w, h: o[3] ?? o.h, type: o[4] ?? o.type ?? 'block' })),
+    floorCut: (mapData.fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
   };
 }
 
 function startSavedMapMission(mapData: SavedMap['data']) {
   state.room = roomFromSavedMap(mapData);
   state.room.floor = computeFloorCells(state.room.walls);
+  // Apply floor cuts
+  state.room.floor = state.room.floor.filter(c => !state.room.floorCut.some(fc => fc.x === c.x && fc.y === c.y));
   for (const w of state.room.walls) for (const d of w.doors) d.open = true;
   state.operators = [];
   state.selectedOpId = null;
@@ -796,6 +827,8 @@ function restoreSession(data: SerializedSession) {
     }),
     entryPoints: (data.room.e || []).map((e: number[]) => ({ x: e[0], y: e[1] })),
     floor: (data.room.f || []).map((p: number[]) => ({ x: p[0], y: p[1] })),
+    objects: ((data.room as any).o || []).map((o: any) => ({ x: o[0] ?? o.x, y: o[1] ?? o.y, w: o[2] ?? o.w, h: o[3] ?? o.h, type: o[4] ?? o.type ?? 'block' })),
+    floorCut: ((data.room as any).fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
   };
   state.room = room;
 
@@ -1011,7 +1044,9 @@ function snapAngle(start: Vec2, end: Vec2): Vec2 {
 }
 
 function updateFloor() {
-  customRoom.floor = computeFloorCells(customRoom.walls);
+  const raw = computeFloorCells(customRoom.walls);
+  // Remove floor cells that are in floorCut
+  customRoom.floor = raw.filter(c2 => !customRoom.floorCut.some(fc => fc.x === c2.x && fc.y === c2.y));
 }
 
 /** Compute enclosed floor cells using ray-casting.
@@ -1206,8 +1241,9 @@ document.getElementById('btn-load-code')!.onclick = () => {
   errorEl.textContent = '';
   if (!code) { errorEl.textContent = 'Paste a room code first'; return; }
   try {
-    const d = JSON.parse(code);
-    if (!d.w || !Array.isArray(d.w)) throw new Error('Missing wall data');
+    const d = decodeRoomCode(code);
+    // Auto-save as a custom map so it appears under "Your Custom Maps"
+    saveImportedMap(d);
     startSavedMapMission(d);
     input.value = '';
   } catch {
@@ -1263,18 +1299,13 @@ for (const name of STAMP_NAMES) {
 
 // Share codes
 document.getElementById('build-export')!.onclick = () => {
-  const code = JSON.stringify({
-    w: customRoom.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.doors.map(d => [d.pos, d.open ? 1 : 0])]),
-    t: customRoom.threats.map(t => [t.position.x, t.position.y]),
-    e: customRoom.entryPoints.map(e => [e.x, e.y]),
-    f: customRoom.floor.map(p => [p.x, p.y]),
-  });
+  const code = encodeRoomCode(customRoom);
   (document.getElementById('build-code') as HTMLTextAreaElement).value = code;
   navigator.clipboard.writeText(code).catch(() => {});
 };
 document.getElementById('build-import')!.onclick = () => {
   try {
-    const d = JSON.parse((document.getElementById('build-code') as HTMLTextAreaElement).value);
+    const d = decodeRoomCode((document.getElementById('build-code') as HTMLTextAreaElement).value);
     pushHistory();
     customRoom.walls = (d.w || []).map((w: any[]) => {
       const wall = makeWall(w[0], w[1], w[2], w[3]);
@@ -1288,6 +1319,8 @@ document.getElementById('build-import')!.onclick = () => {
     customRoom.threats = (d.t || []).map((t: number[]) => makeThreat(t[0], t[1]));
     customRoom.entryPoints = (d.e || []).map((e: number[]) => ({ x: e[0], y: e[1] }));
     customRoom.floor = (d.f || []).map((p: number[]) => ({ x: p[0], y: p[1] }));
+    customRoom.objects = ((d as any).o || []).map((o: any) => ({ x: o[0] ?? o.x, y: o[1] ?? o.y, w: o[2] ?? o.w, h: o[3] ?? o.h, type: o[4] ?? o.type ?? 'block' }));
+    customRoom.floorCut = ((d as any).fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y }));
   } catch { alert('Invalid room code'); }
 };
 
@@ -1384,7 +1417,7 @@ window.addEventListener('keydown', (e) => {
   // Build screen shortcuts
   if (document.getElementById('build-screen')!.style.display !== 'none') {
     if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undoHistory(); return; }
-    const toolKeys: Record<string, BuildToolType> = { '1': 'line', '2': 'square', '3': 'delete', '4': 'door', '5': 'threat', '6': 'entry' };
+    const toolKeys: Record<string, BuildToolType> = { '1': 'line', '2': 'square', '3': 'delete', '4': 'door', '5': 'object', '6': 'stairs', '7': 'threat', '8': 'eraser' };
     if (toolKeys[e.key]) {
       buildTool = toolKeys[e.key];
       document.querySelectorAll('.build-tool').forEach(b => b.classList.remove('active'));
@@ -1842,12 +1875,7 @@ function downloadShareGif() {
 }
 
 function getRoomShareCode(): string {
-  return JSON.stringify({
-    w: state.room.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.doors.map(d => [d.pos, d.open ? 1 : 0])]),
-    t: state.room.threats.map(t => [t.position.x, t.position.y]),
-    e: state.room.entryPoints.map(e => [e.x, e.y]),
-    f: state.room.floor.map(p => [p.x, p.y]),
-  });
+  return encodeRoomCode(state.room);
 }
 
 function copyRoomCode() {
@@ -2596,7 +2624,7 @@ buildCv.addEventListener('mousemove', (e) => {
   }
   if (buildMouseDown && buildDragStart) {
     if (buildTool === 'line') buildDragEnd = snapAngle(buildDragStart, snapVec(buildMousePos));
-    else if (buildTool === 'square' || buildTool === 'room') buildDragEnd = snapVec(buildMousePos);
+    else if (buildTool === 'square' || buildTool === 'room' || buildTool === 'object' || buildTool === 'stairs' || buildTool === 'eraser') buildDragEnd = snapVec(buildMousePos);
   }
 });
 
@@ -2605,7 +2633,7 @@ buildCv.addEventListener('mousedown', (e) => {
   const p = buildPos(e);
   buildMouseDown = true;
 
-  if (buildTool === 'line' || buildTool === 'square' || buildTool === 'room') {
+  if (buildTool === 'line' || buildTool === 'square' || buildTool === 'room' || buildTool === 'object' || buildTool === 'stairs' || buildTool === 'eraser') {
     buildDragStart = snapVec(p); buildDragEnd = null;
   } else if (buildTool === 'delete') {
     if (buildHoveredWall >= 0) { pushHistory(); customRoom.walls.splice(buildHoveredWall, 1); buildHoveredWall = -1; updateFloor(); }
@@ -2627,8 +2655,6 @@ buildCv.addEventListener('mousedown', (e) => {
     }
   } else if (buildTool === 'threat') {
     pushHistory(); customRoom.threats.push(makeThreat(snapGrid(p.x), snapGrid(p.y)));
-  } else if (buildTool === 'entry') {
-    pushHistory(); customRoom.entryPoints.push({ x: snapGrid(p.x), y: snapGrid(p.y) });
   }
 });
 
@@ -2660,6 +2686,29 @@ buildCv.addEventListener('mouseup', () => {
       const newWalls = stampFn(x0, y0, rw, rh);
       customRoom.walls.push(...newWalls);
       mergeWalls(); updateFloor();
+    }
+  } else if ((buildTool === 'object' || buildTool === 'stairs') && buildDragStart && buildDragEnd) {
+    const s = buildDragStart, e = buildDragEnd;
+    const x0 = Math.min(s.x, e.x), y0 = Math.min(s.y, e.y), x1 = Math.max(s.x, e.x), y1 = Math.max(s.y, e.y);
+    const rw = x1 - x0, rh = y1 - y0;
+    if (rw > GRID * 0.5 && rh > GRID * 0.5) {
+      pushHistory();
+      customRoom.objects.push({ x: x0, y: y0, w: rw, h: rh, type: buildTool === 'stairs' ? 'stairs' : 'block' });
+    }
+  } else if (buildTool === 'eraser' && buildDragStart && buildDragEnd) {
+    const s = buildDragStart, e = buildDragEnd;
+    const x0 = Math.min(s.x, e.x), y0 = Math.min(s.y, e.y), x1 = Math.max(s.x, e.x), y1 = Math.max(s.y, e.y);
+    if (x1 - x0 > 2 || y1 - y0 > 2) {
+      pushHistory();
+      // Add all grid cells in the drag rect to floorCut
+      for (let cx = snapGrid(x0); cx < x1; cx += GRID) {
+        for (let cy = snapGrid(y0); cy < y1; cy += GRID) {
+          if (!customRoom.floorCut.some(c2 => c2.x === cx && c2.y === cy)) {
+            customRoom.floorCut.push({ x: cx, y: cy });
+          }
+        }
+      }
+      updateFloor(); // recompute to apply cuts
     }
   }
   buildDragStart = null; buildDragEnd = null;
@@ -2927,7 +2976,7 @@ function renderBuild() {
 
   // Tool info HUD
   const toolLabel: Record<BuildToolType, string> = {
-    line: 'LINE', square: 'SQUARE', delete: 'DELETE', door: 'DOOR', threat: 'THREAT', entry: 'ENTRY', room: buildSelectedStamp.toUpperCase(),
+    line: 'LINE', square: 'SQUARE', delete: 'DELETE', door: 'DOOR', threat: 'THREAT', object: 'OBJECT', stairs: 'STAIRS', eraser: 'ERASER', room: buildSelectedStamp.toUpperCase(),
   };
   const toolHint: Record<BuildToolType, string> = {
     line: 'Drag to draw a wall. Snaps to 15\u00B0 increments.',
@@ -2935,7 +2984,9 @@ function renderBuild() {
     delete: 'Click on any wall to remove it.',
     door: 'Click a slot on any wall to place or toggle a door.',
     threat: 'Click to place a threat marker.',
-    entry: 'Click to place an operator entry point.',
+    object: 'Drag to place a filled object/furniture.',
+    stairs: 'Drag to place a staircase.',
+    eraser: 'Drag to erase floor tiles.',
     room: 'Drag to stamp a ' + buildSelectedStamp + ' room layout.',
   };
   ctx.fillStyle = 'rgba(8,14,18,0.85)';
@@ -2952,7 +3003,8 @@ function renderBuild() {
   ctx.strokeStyle = 'rgba(68,187,170,0.1)'; ctx.beginPath(); ctx.moveTo(0, H - 22); ctx.lineTo(W, H - 22); ctx.stroke();
   ctx.fillStyle = 'rgba(138,170,153,0.45)'; ctx.font = '9px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   const doors = customRoom.walls.reduce((s, w) => s + w.doors.length, 0);
-  ctx.fillText(`Walls: ${customRoom.walls.length}  Doors: ${doors}  Threats: ${customRoom.threats.length}  Entries: ${customRoom.entryPoints.length}`, 10, H - 11);
+  const objs = customRoom.objects.length;
+  ctx.fillText(`Walls: ${customRoom.walls.length}  Doors: ${doors}  Objects: ${objs}  Threats: ${customRoom.threats.length}`, 10, H - 11);
   ctx.textAlign = 'right';
   ctx.fillText('[1-6] Tools  [Ctrl+Z] Undo', W - 10, H - 11);
 }
