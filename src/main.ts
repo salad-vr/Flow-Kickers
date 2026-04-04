@@ -196,14 +196,54 @@ function snapAngle(start: Vec2, end: Vec2): Vec2 {
 }
 
 function updateFloor() {
-  if (customRoom.walls.length >= 3) {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const w of customRoom.walls) {
-      x0 = Math.min(x0, w.a.x, w.b.x); y0 = Math.min(y0, w.a.y, w.b.y);
-      x1 = Math.max(x1, w.a.x, w.b.x); y1 = Math.max(y1, w.a.y, w.b.y);
+  customRoom.floor = computeFloorCells(customRoom.walls);
+}
+
+/** Compute enclosed floor cells using ray-casting.
+ *  For each grid cell, cast rays in 4 cardinal directions.
+ *  A cell is "enclosed" if rays hit walls in at least 3 of 4 directions. */
+function computeFloorCells(walls: { a: Vec2; b: Vec2; hasDoor: boolean }[]): Vec2[] {
+  if (walls.length < 3) return [];
+  // Find bounding box of all walls
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const w of walls) {
+    x0 = Math.min(x0, w.a.x, w.b.x); y0 = Math.min(y0, w.a.y, w.b.y);
+    x1 = Math.max(x1, w.a.x, w.b.x); y1 = Math.max(y1, w.a.y, w.b.y);
+  }
+  // Expand slightly
+  x0 = snapGrid(x0) - GRID; y0 = snapGrid(y0) - GRID;
+  x1 = snapGrid(x1) + GRID; y1 = snapGrid(y1) + GRID;
+
+  const cells: Vec2[] = [];
+  const half = GRID / 2;
+
+  for (let cx = x0; cx < x1; cx += GRID) {
+    for (let cy = y0; cy < y1; cy += GRID) {
+      const px = cx + half, py = cy + half;
+      let dirs = 0;
+      // Cast rays in 4 directions from cell center, check if each hits a wall
+      if (rayHitsWall(px, py, 1, 0, walls)) dirs++;   // right
+      if (rayHitsWall(px, py, -1, 0, walls)) dirs++;  // left
+      if (rayHitsWall(px, py, 0, 1, walls)) dirs++;   // down
+      if (rayHitsWall(px, py, 0, -1, walls)) dirs++;  // up
+      if (dirs >= 3) cells.push({ x: cx, y: cy });
     }
-    customRoom.floor = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
-  } else customRoom.floor = [];
+  }
+  return cells;
+}
+
+/** Check if a ray from (ox,oy) in direction (dx,dy) hits any wall segment */
+function rayHitsWall(ox: number, oy: number, dx: number, dy: number, walls: { a: Vec2; b: Vec2 }[]): boolean {
+  for (const w of walls) {
+    // Ray-segment intersection
+    const ex = w.b.x - w.a.x, ey = w.b.y - w.a.y;
+    const denom = dx * ey - dy * ex;
+    if (Math.abs(denom) < 1e-10) continue;
+    const t = ((w.a.x - ox) * ey - (w.a.y - oy) * ex) / denom;
+    const u = ((w.a.x - ox) * dy - (w.a.y - oy) * dx) / denom;
+    if (t > 0.5 && u >= 0 && u <= 1) return true;
+  }
+  return false;
 }
 
 // ---- Wall merging: merge collinear overlapping walls into one ----
@@ -396,6 +436,7 @@ function show(s: 'menu' | 'tut' | 'build' | 'game') {
 
 function startMission() {
   state.room = (ROOM_TEMPLATES as Record<string, () => Room>)[selRoom]();
+  state.room.floor = computeFloorCells(state.room.walls);
   for (const w of state.room.walls) if (w.hasDoor) w.doorOpen = true;
   state.operators = [];
   state.selectedOpId = null;
@@ -410,10 +451,10 @@ function startMission() {
     state.operators.push(createOperator(i));
   }
   // Center camera on room
-  if (state.room.floor.length > 0) {
-    let cx = 0, cy = 0;
-    for (const p of state.room.floor) { cx += p.x; cy += p.y; }
-    cx /= state.room.floor.length; cy /= state.room.floor.length;
+  if (state.room.walls.length > 0) {
+    let cx = 0, cy = 0, count = 0;
+    for (const w of state.room.walls) { cx += w.a.x + w.b.x; cy += w.a.y + w.b.y; count += 2; }
+    cx /= count; cy /= count;
     state.camera = { x: cx, y: cy, zoom: 1 };
   } else {
     state.camera = { x: 500, y: 350, zoom: 1 };
@@ -423,6 +464,7 @@ function startMission() {
 
 function startCustomMission() {
   state.room = JSON.parse(JSON.stringify(customRoom)) as Room;
+  state.room.floor = computeFloorCells(state.room.walls);
   for (const w of state.room.walls) if (w.hasDoor && w.doorOpen) w.doorOpen = true;
   state.operators = [];
   state.selectedOpId = null;
@@ -576,22 +618,34 @@ function handleInput() {
   // Get world-space mouse position for all game interactions
   const worldMouse = screenToWorld(input.mousePos);
 
+  // HUD hover detection (runs every frame, all modes)
+  const hudBarY = canvas.height - 36;
+  const W = canvas.width;
+  const btnY = hudBarY + 5;
+  if (input.mousePos.y > hudBarY) {
+    canvas.style.cursor = 'default';
+    if (hitBtn(input.mousePos, W / 2 - 40, btnY, 80, 26)) state.hoveredHudBtn = 'go';
+    else if (hitBtn(input.mousePos, W / 2 + 50, btnY, 60, 26)) state.hoveredHudBtn = 'reset';
+    else if (hitBtn(input.mousePos, W / 2 - 110, btnY, 60, 26)) state.hoveredHudBtn = 'menu';
+    else if (hitBtn(input.mousePos, W - 56, btnY, 48, 26)) state.hoveredHudBtn = 'gif';
+    else state.hoveredHudBtn = null;
+    if (state.hoveredHudBtn) canvas.style.cursor = 'pointer';
+  } else {
+    state.hoveredHudBtn = null;
+    canvas.style.cursor = 'crosshair';
+  }
+
   // HUD bar button clicks work in ALL modes (including executing)
-  if (input.justPressed) {
-    const hudBarY2 = canvas.height - 36;
-    const W = canvas.width;
-    if (input.mousePos.y > hudBarY2) {
-      const cy2 = hudBarY2 + 5;
-      if (hitBtn(input.mousePos, W / 2 - 40, cy2, 80, 26)) {
-        if (state.mode === 'planning') doGo();
-        else if (state.mode === 'executing') { state.mode = 'paused'; }
-        else if (state.mode === 'paused') { state.mode = 'executing'; }
-      }
-      else if (hitBtn(input.mousePos, W / 2 + 50, cy2, 60, 26)) doReset();
-      else if (hitBtn(input.mousePos, W / 2 - 110, cy2, 60, 26)) show('menu');
-      else if (hitBtn(input.mousePos, W - 56, cy2, 48, 26)) doExport();
-      return; // always consume clicks in HUD bar
+  if (input.justPressed && input.mousePos.y > hudBarY) {
+    if (hitBtn(input.mousePos, W / 2 - 40, btnY, 80, 26)) {
+      if (state.mode === 'planning') doGo();
+      else if (state.mode === 'executing') { state.mode = 'paused'; }
+      else if (state.mode === 'paused') { state.mode = 'executing'; }
     }
+    else if (hitBtn(input.mousePos, W / 2 + 50, btnY, 60, 26)) doReset();
+    else if (hitBtn(input.mousePos, W / 2 - 110, btnY, 60, 26)) show('menu');
+    else if (hitBtn(input.mousePos, W - 56, btnY, 48, 26)) doExport();
+    return; // always consume clicks in HUD bar
   }
 
   if (state.mode === 'executing') return;
@@ -606,11 +660,11 @@ function handleInput() {
     const sp = { x: (pop.position.x - cam.x) * cam.zoom + W / 2, y: (pop.position.y - cam.y) * cam.zoom + H / 2 };
     const isOp = pop.wpIdx < 0;
     const items = isOp
-      ? ['Draw Path', 'Speed', 'Clear Path']
+      ? ['Draw Path', 'Direction', 'Speed', 'Clear Path']
       : ['Hold', 'Look At', 'Speed', 'Delete'];
     const iw = 70, ih = 24, gap = 4;
     const totalH = items.length * (ih + gap) - gap;
-    const px = sp.x + 22, py = sp.y - totalH / 2;
+    const px = sp.x + 20, py = sp.y - totalH / 2;
 
     let clicked = -1;
     for (let i = 0; i < items.length; i++) {
@@ -625,6 +679,8 @@ function handleInput() {
           op.path.waypoints = [makeWaypoint(op.position)];
           op.path.splineLUT = null;
           state.interaction = { type: 'placing_waypoints', opId: op.id };
+        } else if (items[clicked] === 'Direction') {
+          state.interaction = { type: 'spinning_direction', opId: op.id };
         } else if (items[clicked] === 'Speed') {
           state.interaction = { type: 'tempo_ring', opId: op.id, wpIdx: null, centerAngle: 0, startTempo: op.tempo };
         } else if (items[clicked] === 'Clear Path') {
@@ -657,10 +713,10 @@ function handleInput() {
     const op = state.operators.find(o => o.id === inter.opId);
     if (op && input.mouseDown) op.position = copy(worldMouse);
     if (input.justReleased && op) {
-      if (true) { // deployed on release anywhere on map
-        op.deployed = true;
-        op.startPosition = copy(op.position);
-      }
+      op.deployed = true;
+      op.startPosition = copy(op.position);
+      op.angle = 0; // face right when placed
+      op.startAngle = 0;
       state.interaction = { type: 'idle' };
     }
     return;
@@ -744,6 +800,24 @@ function handleInput() {
       }
     }
     if (input.justReleased) state.interaction = { type: 'idle' };
+    return;
+  }
+
+  if (inter.type === 'spinning_direction') {
+    const op = state.operators.find(o => o.id === inter.opId);
+    if (op) {
+      // Continuously set facing toward mouse while any button is held or moving
+      const dx = worldMouse.x - op.position.x;
+      const dy = worldMouse.y - op.position.y;
+      if (dx * dx + dy * dy > 16) {
+        op.angle = Math.atan2(dy, dx);
+        op.startAngle = op.angle;
+      }
+    }
+    // Exit on click (after the initial menu click that started this)
+    if (input.justPressed || input.rightJustPressed) {
+      state.interaction = { type: 'idle' };
+    }
     return;
   }
 
@@ -971,14 +1045,12 @@ function renderBuild() {
   ctx.fillStyle = '#080e12';
   ctx.fillRect(0, 0, W, H);
 
-  // Floor
-  if (customRoom.floor.length >= 3) {
-    ctx.beginPath();
-    ctx.moveTo(customRoom.floor[0].x, customRoom.floor[0].y);
-    for (let i = 1; i < customRoom.floor.length; i++) ctx.lineTo(customRoom.floor[i].x, customRoom.floor[i].y);
-    ctx.closePath();
+  // Floor cells
+  if (customRoom.floor.length > 0) {
     ctx.fillStyle = '#1a1814';
-    ctx.fill();
+    for (const cell of customRoom.floor) {
+      ctx.fillRect(cell.x, cell.y, GRID, GRID);
+    }
   }
 
   // Grid dots

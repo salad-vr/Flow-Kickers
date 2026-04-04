@@ -8,12 +8,12 @@ export function createOperator(colorIndex: number): Operator {
   const id = nextId++;
   const emptyPath: WaypointPath = { waypoints: [], splineLUT: null, color };
   return {
-    id, position: { x: 0, y: 0 }, angle: -Math.PI / 2,
+    id, position: { x: 0, y: 0 }, angle: 0, // facing right
     speed: OP_SPEED, fovAngle: FOV_ANG, fovRange: FOV_DIST,
     color, label: String(id), path: emptyPath, tempo: 1, deployed: false,
     distanceTraveled: 0, currentWaypointIndex: 0,
     isHolding: false, isMoving: false, reachedEnd: false,
-    startPosition: { x: 0, y: 0 }, startAngle: -Math.PI / 2,
+    startPosition: { x: 0, y: 0 }, startAngle: 0,
   };
 }
 

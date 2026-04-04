@@ -1,4 +1,4 @@
-import type { GameState, Operator, Room, WallSegment, ThreatMarker, NodePopup, Camera } from '../types';
+import type { GameState, Operator, Room, WallSegment, ThreatMarker, NodePopup, Camera, HudBtn } from '../types';
 import { WALL_W, OP_R, THREAT_R, GRID, DOOR_W, C, NODE_R, DEPLOY_PANEL_H, DEPLOY_OP_SPACING } from '../types';
 import { getWallsForCollision } from '../room/room';
 import { computeOperatorFOV } from '../operator/visibility';
@@ -29,12 +29,13 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
   ctx.scale(cam.zoom, cam.zoom);
   ctx.translate(-cam.x, -cam.y);
 
-  // Floor
+  // Floor cells
   const fl = state.room.floor;
-  if (fl.length >= 3) {
-    ctx.beginPath(); ctx.moveTo(fl[0].x, fl[0].y);
-    for (let i = 1; i < fl.length; i++) ctx.lineTo(fl[i].x, fl[i].y);
-    ctx.closePath(); ctx.fillStyle = C.floor; ctx.fill();
+  if (fl.length > 0) {
+    ctx.fillStyle = C.floor;
+    for (const cell of fl) {
+      ctx.fillRect(cell.x, cell.y, GRID, GRID);
+    }
   }
 
   // Grid (subtle)
@@ -301,6 +302,9 @@ function drawDeployPanel(ctx: CanvasRenderingContext2D, state: GameState, H: num
 
 function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: number) {
   const barH = 36, barY = H - barH;
+  const hov = state.hoveredHudBtn;
+
+  // Bar background
   ctx.fillStyle = C.hud;
   ctx.fillRect(0, barY, W, barH);
   ctx.strokeStyle = C.hudBorder; ctx.lineWidth = 1;
@@ -317,20 +321,20 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
   ctx.textAlign = 'center';
   const mode = state.mode;
   if (mode === 'planning') {
-    drawHudBtn(ctx, W / 2 - 40, barY + 5, 80, 26, 'GO!', C.accent);
+    drawHudBtn(ctx, W / 2 - 40, barY + 5, 80, 26, 'GO!', C.accent, hov === 'go');
   } else if (mode === 'executing') {
-    drawHudBtn(ctx, W / 2 - 40, barY + 5, 80, 26, 'PAUSE', C.hudText);
+    drawHudBtn(ctx, W / 2 - 40, barY + 5, 80, 26, 'PAUSE', C.hudText, hov === 'go');
   } else {
-    drawHudBtn(ctx, W / 2 - 40, barY + 5, 80, 26, 'RESUME', C.accent);
+    drawHudBtn(ctx, W / 2 - 40, barY + 5, 80, 26, 'RESUME', C.accent, hov === 'go');
   }
-  drawHudBtn(ctx, W / 2 + 50, barY + 5, 60, 26, 'RESET', C.hudText);
-  drawHudBtn(ctx, W / 2 - 110, barY + 5, 60, 26, 'MENU', C.hudText);
+  drawHudBtn(ctx, W / 2 + 50, barY + 5, 60, 26, 'RESET', C.hudText, hov === 'reset');
+  drawHudBtn(ctx, W / 2 - 110, barY + 5, 60, 26, 'MENU', C.hudText, hov === 'menu');
 
   // Right: timer + GIF
   const m = Math.floor(state.elapsedTime / 60), s = Math.floor(state.elapsedTime % 60);
   ctx.fillStyle = C.accent; ctx.textAlign = 'right'; ctx.font = 'bold 12px monospace';
   ctx.fillText(`${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`, W - 70, cy);
-  drawHudBtn(ctx, W - 56, barY + 5, 48, 26, 'GIF', C.hudText);
+  drawHudBtn(ctx, W - 56, barY + 5, 48, 26, 'GIF', C.hudText, hov === 'gif');
 
   // Mode indicator top-right
   ctx.fillStyle = C.hud; ctx.fillRect(W - 110, 8, 102, 22);
@@ -342,12 +346,25 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
   ctx.textBaseline = 'alphabetic';
 }
 
-function drawHudBtn(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, label: string, color: string) {
-  ctx.fillStyle = 'rgba(20,35,40,0.8)';
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = C.hudBorder; ctx.lineWidth = 1;
-  ctx.strokeRect(x, y, w, h);
-  ctx.fillStyle = color; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+function drawHudBtn(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, label: string, color: string, hovered: boolean = false) {
+  const r = 4; // border radius
+
+  // Background
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  ctx.fillStyle = hovered ? 'rgba(40,55,75,0.95)' : 'rgba(18,30,48,0.85)';
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = hovered ? C.accent : C.hudBorder;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Label
+  ctx.fillStyle = hovered ? C.hudBright : color;
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   ctx.fillText(label, x + w / 2, y + h / 2);
   ctx.textBaseline = 'alphabetic';
 }
@@ -360,7 +377,7 @@ function drawPopup(ctx: CanvasRenderingContext2D, popup: NodePopup, state: GameS
   const p = popup.position;
 
   const items = isOp
-    ? ['Draw Path', 'Speed', 'Clear Path']
+    ? ['Draw Path', 'Direction', 'Speed', 'Clear Path']
     : ['Hold', 'Look At', 'Speed', 'Delete'];
   const iw = 70, ih = 24, gap = 4;
   const totalH = items.length * (ih + gap) - gap;

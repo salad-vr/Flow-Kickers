@@ -36,7 +36,8 @@ export type Interaction =
   | { type: 'setting_facing'; opId: number; wpIdx: number | null }
   | { type: 'dragging_node'; opId: number; wpIdx: number }
   | { type: 'setting_look_target'; opId: number; wpIdx: number }
-  | { type: 'tempo_ring'; opId: number; wpIdx: number | null; centerAngle: number; startTempo: number };
+  | { type: 'tempo_ring'; opId: number; wpIdx: number | null; centerAngle: number; startTempo: number }
+  | { type: 'spinning_direction'; opId: number };
 
 export interface NodePopup { opId: number; wpIdx: number; position: Vec2; }
 
