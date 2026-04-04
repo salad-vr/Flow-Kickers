@@ -287,7 +287,7 @@ function drawPath(ctx: CanvasRenderingContext2D, op: Operator, grey: boolean, st
   if (grey) return;
 
   const isSel = state.selectedOpId === op.id;
-  for (let i = 0; i < wps.length; i++) {
+  for (let i = 1; i < wps.length; i++) { // start at 1: node 0 IS the operator
     const wp = wps[i], p = wp.position;
     const r = isSel ? NODE_R : 3;
     ctx.fillStyle = wp.hold ? C.hold : op.color;

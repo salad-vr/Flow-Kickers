@@ -1362,6 +1362,11 @@ function handleInput() {
     if (op && input.mouseDown && input.isDragging) {
       op.position = copy(worldMouse);
       op.startPosition = copy(op.position);
+      // Keep waypoint 0 synced with operator position
+      if (op.path.waypoints.length > 0) {
+        op.path.waypoints[0].position = copy(worldMouse);
+        rebuildPathLUT(op);
+      }
     }
     if (input.justReleased) {
       if (!input.isDragging && op) {
@@ -1587,7 +1592,8 @@ function handleInput() {
     // All game-world hit tests use worldMouse
     const selOp = state.operators.find(o => o.id === state.selectedOpId && o.deployed);
     if (selOp) {
-      for (let i = 0; i < selOp.path.waypoints.length; i++) {
+      // Start at 1: node 0 is the operator itself, handled by operator hit-test below
+      for (let i = 1; i < selOp.path.waypoints.length; i++) {
         if (distance(worldMouse, selOp.path.waypoints[i].position) < NODE_R + 4) {
           state.interaction = { type: 'dragging_node', opId: selOp.id, wpIdx: i }; return;
         }
