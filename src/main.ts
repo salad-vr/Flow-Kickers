@@ -1608,9 +1608,29 @@ function handleInput() {
     // HUD bar clicks already handled above
 
     // All game-world hit tests use worldMouse
+
+    // Operator hit-test FIRST (priority over path/node clicks)
+    for (const op of state.operators) {
+      if (!op.deployed) continue;
+      if (distance(worldMouse, op.position) < OP_R + 8) {
+        if (state.selectedOpId === op.id) {
+          // Already selected - start drag (will open radial menu on short click via release handler)
+          state.interaction = { type: 'moving_op', opId: op.id };
+        } else {
+          // Swap to this operator - just select it (show glow ring)
+          state.selectedOpId = op.id;
+          state.popup = null;
+          state.radialMenu = null;
+          state.pendingNode = null;
+          state.interaction = { type: 'idle' };
+        }
+        return;
+      }
+    }
+
+    // Then path node + spline hit-tests for the selected operator
     const selOp = state.operators.find(o => o.id === state.selectedOpId && o.deployed);
     if (selOp) {
-      // Start at 1: node 0 is the operator itself, handled by operator hit-test below
       for (let i = 1; i < selOp.path.waypoints.length; i++) {
         if (distance(worldMouse, selOp.path.waypoints[i].position) < NODE_R + 4) {
           state.interaction = { type: 'dragging_node', opId: selOp.id, wpIdx: i }; return;
@@ -1633,25 +1653,6 @@ function handleInput() {
           state.interaction = { type: 'dragging_node', opId: selOp.id, wpIdx: insertAfter + 1 };
           return;
         }
-      }
-    }
-
-    // 4. Check ALL deployed operators (before path checks)
-    for (const op of state.operators) {
-      if (!op.deployed) continue;
-      if (distance(worldMouse, op.position) < OP_R + 8) {
-        if (state.selectedOpId === op.id) {
-          // Already selected - start drag (will open radial menu on short click via release handler)
-          state.interaction = { type: 'moving_op', opId: op.id };
-        } else {
-          // Swap to this operator - just select it (show glow ring)
-          state.selectedOpId = op.id;
-          state.popup = null;
-          state.radialMenu = null;
-          state.pendingNode = null;
-          state.interaction = { type: 'idle' };
-        }
-        return;
       }
     }
 
