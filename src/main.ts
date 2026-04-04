@@ -1414,7 +1414,7 @@ window.addEventListener('keydown', (e) => {
       if (state.interaction.type === 'placing_pie') {
         const inter = state.interaction;
         const op = state.operators.find(o => o.id === inter.opId);
-        if (op) op.pieTarget = null;
+        if (op) { bakePieDirection(op); op.pieTarget = null; }
       }
       if (state.interaction.type === 'placing_waypoints' || state.interaction.type === 'placing_pie' || state.interaction.type === 'speed_slider') state.interaction = { type: 'idle' };
       state.selectedOpId = null;
@@ -1463,6 +1463,9 @@ function saveStage() {
   if (deployed.length === 0) return;
   if (!deployed.some(o => o.path.waypoints.length >= 2)) return;
 
+  // Bake pie directions into waypoints before snapshotting
+  for (const op of deployed) bakePieDirection(op);
+
   const stage: import('./types').Stage = {
     operatorStates: deployed.map(op => ({
       opId: op.id,
@@ -1507,6 +1510,9 @@ function doGo() {
   const deployed = state.operators.filter(o => o.deployed);
   if (deployed.length === 0) return;
   if (!deployed.some(o => o.path.waypoints.length >= 2) && state.stages.length === 0) return;
+
+  // Bake pie directions into waypoints before snapshotting
+  for (const op of deployed) bakePieDirection(op);
 
   // Save pre-GO snapshot so RESET can return to this exact state
   state.preGoSnapshot = {
@@ -1838,6 +1844,27 @@ function hitBtn(mouse: Vec2, x: number, y: number, w: number, h: number): boolea
   return mouse.x >= x && mouse.x <= x + w && mouse.y >= y && mouse.y <= y + h;
 }
 
+/** Bake pie target direction into waypoints so facing persists after pie is removed */
+function bakePieDirection(op: Operator) {
+  if (!op.pieTarget) return;
+  const pie = op.pieTarget;
+  // Set startAngle to face the pie target
+  const dx0 = pie.x - op.position.x, dy0 = pie.y - op.position.y;
+  if (dx0 * dx0 + dy0 * dy0 > 1) {
+    op.angle = Math.atan2(dy0, dx0);
+    op.startAngle = op.angle;
+  }
+  // Bake into each waypoint that doesn't already have a facingOverride or lookTarget
+  for (const wp of op.path.waypoints) {
+    if (wp.facingOverride === null && !wp.lookTarget) {
+      const dx = pie.x - wp.position.x, dy = pie.y - wp.position.y;
+      if (dx * dx + dy * dy > 1) {
+        wp.facingOverride = Math.atan2(dy, dx);
+      }
+    }
+  }
+}
+
 // ---- Radial Menu Definitions ----
 const RADIAL_R = 28; // radius of icon ring around center (world-space)
 const RADIAL_ICON_R = 10; // radius of each icon hit area (world-space)
@@ -2069,7 +2096,8 @@ function handleInput() {
               state.interaction = { type: 'spinning_direction', opId: op.id };
             } else if (item.id === 'pie') {
               if (op.pieTarget) {
-                // Already has pie - toggle it off
+                // Already has pie - bake direction into waypoints, then remove icon
+                bakePieDirection(op);
                 op.pieTarget = null;
                 state.interaction = { type: 'idle' };
               } else {
@@ -2328,8 +2356,8 @@ function handleInput() {
       return;
     }
     if (input.rightJustPressed) {
-      // Right-click cancels, also clears existing pie target
-      if (op) op.pieTarget = null;
+      // Right-click cancels - bake direction then clear pie
+      if (op) { bakePieDirection(op); op.pieTarget = null; }
       state.interaction = { type: 'idle' };
       return;
     }
