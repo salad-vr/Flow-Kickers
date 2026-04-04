@@ -664,7 +664,7 @@ function show(s: 'menu' | 'tut' | 'build' | 'game') {
   for (const [key, el] of Object.entries(screens)) {
     if (key === s) {
       // Show this screen
-      el.style.display = key === 'build' ? 'flex' : (key === 'game' ? 'flex' : 'flex');
+      el.style.display = 'flex';
       // Force reflow before removing hidden class for transition
       el.offsetHeight;
       el.classList.remove('screen-hidden');
@@ -1444,11 +1444,23 @@ function handleInput() {
 
   if (inter.type === 'dragging_node') {
     const op = state.operators.find(o => o.id === inter.opId);
-    if (op && input.mouseDown) { op.path.waypoints[inter.wpIdx].position = copy(worldMouse); rebuildPathLUT(op); }
+    if (op && input.mouseDown) {
+      if (inter.wpIdx === 0) {
+        // Node 0 IS the operator - move operator + sync node 0
+        op.position = copy(worldMouse);
+        op.startPosition = copy(worldMouse);
+        op.path.waypoints[0].position = copy(worldMouse);
+      } else {
+        op.path.waypoints[inter.wpIdx].position = copy(worldMouse);
+      }
+      rebuildPathLUT(op);
+    }
     if (input.justReleased) {
       if (!input.isDragging && op) {
-        // Short click on node = open node radial menu
-        state.radialMenu = { center: copy(op.path.waypoints[inter.wpIdx].position), opId: op.id, wpIdx: inter.wpIdx, hoveredIdx: -1, animT: 0 };
+        // Short click on node = open node radial menu (but not for node 0 - that's the operator)
+        if (inter.wpIdx > 0) {
+          state.radialMenu = { center: copy(op.path.waypoints[inter.wpIdx].position), opId: op.id, wpIdx: inter.wpIdx, hoveredIdx: -1, animT: 0 };
+        }
       }
       state.interaction = { type: 'idle' };
     }

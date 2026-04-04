@@ -113,6 +113,9 @@ body {
 .menu-content > *:nth-child(3) { animation: fadeSlideUp 0.4s var(--ease-out-expo) 0.15s both; }
 .menu-content > *:nth-child(4) { animation: fadeSlideUp 0.4s var(--ease-out-expo) 0.2s both; }
 .menu-content > *:nth-child(5) { animation: fadeSlideUp 0.4s var(--ease-out-expo) 0.25s both; }
+.menu-content > *:nth-child(6) { animation: fadeSlideUp 0.4s var(--ease-out-expo) 0.3s both; }
+.menu-content > *:nth-child(7) { animation: fadeSlideUp 0.4s var(--ease-out-expo) 0.35s both; }
+.menu-content > *:nth-child(8) { animation: fadeSlideUp 0.4s var(--ease-out-expo) 0.4s both; }
 
 @keyframes fadeSlideUp {
   from { opacity: 0; transform: translateY(10px); }
