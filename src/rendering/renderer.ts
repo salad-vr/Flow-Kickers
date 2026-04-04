@@ -34,12 +34,23 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
   ctx.scale(cam.zoom, cam.zoom);
   ctx.translate(-cam.x, -cam.y);
 
-  // Floor cells
+  // Floor cells (inset slightly so they don't bleed past walls)
   const fl = state.room.floor;
+  const floorSet = new Set(fl.map(c => `${c.x},${c.y}`));
   if (fl.length > 0) {
     ctx.fillStyle = C.floor;
+    const inset = WALL_W / 2 + 1;
     for (const cell of fl) {
-      ctx.fillRect(cell.x, cell.y, GRID, GRID);
+      // Check which edges have no neighbor (exposed to void)
+      const hasL = floorSet.has(`${cell.x - GRID},${cell.y}`);
+      const hasR = floorSet.has(`${cell.x + GRID},${cell.y}`);
+      const hasT = floorSet.has(`${cell.x},${cell.y - GRID}`);
+      const hasB = floorSet.has(`${cell.x},${cell.y + GRID}`);
+      const x = hasL ? cell.x : cell.x + inset;
+      const y = hasT ? cell.y : cell.y + inset;
+      const w = (hasR ? cell.x + GRID : cell.x + GRID - inset) - x;
+      const h = (hasB ? cell.y + GRID : cell.y + GRID - inset) - y;
+      ctx.fillRect(x, y, w, h);
     }
   }
 
