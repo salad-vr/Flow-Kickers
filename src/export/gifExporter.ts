@@ -60,7 +60,7 @@ export async function exportGIF(
 
   // Combine sampled pixels into one array for palette quantization
   const totalPixelCount = samplePixels.reduce((sum, d) => sum + d.length, 0);
-  const combined = new Uint8Array(totalPixelCount);
+  const combined = new Uint8ClampedArray(totalPixelCount);
   let offset = 0;
   for (const d of samplePixels) {
     combined.set(d, offset);
