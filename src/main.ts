@@ -140,8 +140,9 @@ function sizeBuildCanvas() {
   const area = document.querySelector('.build-canvas-area');
   if (!area) return;
   const rect = area.getBoundingClientRect();
-  buildCv.width = rect.width * devicePixelRatio;
-  buildCv.height = rect.height * devicePixelRatio;
+  if (rect.width < 1 || rect.height < 1) return;
+  buildCv.width = Math.round(rect.width);
+  buildCv.height = Math.round(rect.height);
 }
 sizeBuildCanvas();
 window.addEventListener('resize', () => { sizeCanvas(); sizeBuildCanvas(); });
@@ -455,8 +456,10 @@ function show(s: 'menu' | 'tut' | 'build' | 'game') {
   document.getElementById('game-screen')!.style.display = s === 'game' ? 'flex' : 'none';
   state.screen = s === 'game' ? 'game' : 'menu';
   if (s === 'game') {
-    // Re-size canvas now that game screen is visible
     requestAnimationFrame(() => sizeCanvas());
+  }
+  if (s === 'build') {
+    requestAnimationFrame(() => sizeBuildCanvas());
   }
 }
 
@@ -631,7 +634,10 @@ async function doExportGif() {
   try {
     const blob = await exportGIF(state, (p) => { state.sharePanel.exportProgress = p; });
     state.sharePanel.gifBlob = blob;
-  } catch (err) { console.error(err); }
+  } catch (err) {
+    console.error(err);
+    state.exportingGif = false;
+  }
   state.sharePanel.exporting = false;
   doReset();
 }
