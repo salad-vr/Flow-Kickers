@@ -502,6 +502,7 @@ let buildDragEnd: Vec2 | null = null;
 let buildMousePos: Vec2 = { x: 0, y: 0 };
 let buildMouseDown = false;
 let buildHoveredWall = -1;
+let buildHoveredObject = -1;
 let buildHistory: string[] = [];
 let buildAnimT = 0;
 let buildLastTime = performance.now();
@@ -2636,10 +2637,19 @@ buildCv.addEventListener('mousemove', (e) => {
   buildMousePos = buildPos(e);
   if (buildTool === 'delete') {
     buildHoveredWall = -1;
+    buildHoveredObject = -1;
     let best = 15;
     for (let i = 0; i < customRoom.walls.length; i++) {
       const d = distToSegment(buildMousePos, customRoom.walls[i].a, customRoom.walls[i].b);
       if (d < best) { best = d; buildHoveredWall = i; }
+    }
+    // Also check objects (point-in-rect)
+    for (let i = 0; i < customRoom.objects.length; i++) {
+      const o = customRoom.objects[i];
+      if (buildMousePos.x >= o.x && buildMousePos.x <= o.x + o.w &&
+          buildMousePos.y >= o.y && buildMousePos.y <= o.y + o.h) {
+        buildHoveredObject = i;
+      }
     }
   }
   if (buildTool === 'door') {
@@ -2676,7 +2686,11 @@ buildCv.addEventListener('mousedown', (e) => {
   if (buildTool === 'line' || buildTool === 'square' || buildTool === 'room' || buildTool === 'object' || buildTool === 'stairs' || buildTool === 'eraser') {
     buildDragStart = snapVec(p); buildDragEnd = null;
   } else if (buildTool === 'delete') {
-    if (buildHoveredWall >= 0) { pushHistory(); customRoom.walls.splice(buildHoveredWall, 1); buildHoveredWall = -1; updateFloor(); }
+    if (buildHoveredObject >= 0) {
+      pushHistory(); customRoom.objects.splice(buildHoveredObject, 1); buildHoveredObject = -1;
+    } else if (buildHoveredWall >= 0) {
+      pushHistory(); customRoom.walls.splice(buildHoveredWall, 1); buildHoveredWall = -1; updateFloor();
+    }
   } else if (buildTool === 'door') {
     if (buildHoveredDoorSlot) {
       const w = customRoom.walls[buildHoveredDoorSlot.wallIdx];
@@ -2958,18 +2972,20 @@ function renderBuild() {
   }
 
   // ---- Objects (blocks/stairs) ----
-  for (const obj of customRoom.objects) {
+  for (let oi = 0; oi < customRoom.objects.length; oi++) {
+    const obj = customRoom.objects[oi];
+    const objHover = oi === buildHoveredObject && buildTool === 'delete';
     if (obj.type === 'block') {
-      ctx.fillStyle = 'rgba(100,85,65,0.6)';
+      ctx.fillStyle = objHover ? 'rgba(255,80,60,0.3)' : 'rgba(100,85,65,0.6)';
       ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
-      ctx.strokeStyle = 'rgba(140,120,90,0.8)';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = objHover ? 'rgba(255,80,60,0.8)' : 'rgba(140,120,90,0.8)';
+      ctx.lineWidth = objHover ? 2.5 : 1.5;
       ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
     } else if (obj.type === 'stairs') {
-      ctx.fillStyle = 'rgba(70,80,90,0.5)';
+      ctx.fillStyle = objHover ? 'rgba(255,80,60,0.25)' : 'rgba(70,80,90,0.5)';
       ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
-      ctx.strokeStyle = 'rgba(120,130,140,0.7)';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = objHover ? 'rgba(255,80,60,0.8)' : 'rgba(120,130,140,0.7)';
+      ctx.lineWidth = objHover ? 2.5 : 1.5;
       ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
       const steps = Math.max(2, Math.round(Math.min(obj.w, obj.h) / 10));
       const isWide = obj.w > obj.h;
@@ -3077,7 +3093,7 @@ function renderBuild() {
   }
 
   // Delete cursor
-  if (buildTool === 'delete' && buildHoveredWall < 0) {
+  if (buildTool === 'delete' && buildHoveredWall < 0 && buildHoveredObject < 0) {
     ctx.strokeStyle = 'rgba(255,80,60,0.25)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(buildMousePos.x - 6, buildMousePos.y - 6); ctx.lineTo(buildMousePos.x + 6, buildMousePos.y + 6); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(buildMousePos.x + 6, buildMousePos.y - 6); ctx.lineTo(buildMousePos.x - 6, buildMousePos.y + 6); ctx.stroke();
