@@ -14,6 +14,7 @@ import { exportGIF, downloadBlob } from './export/gifExporter';
 import { cornerFedRoom } from './room/templates';
 import { makeWall, makeThreat, createEmptyRoom } from './room/room';
 import { encodeRoomCode, decodeRoomCode } from './room/roomCode';
+import { initMusic, toggleMute, isMuted } from './audio/musicPlayer';
 
 // ---- HTML ----
 const app = document.getElementById('app')!;
@@ -414,6 +415,30 @@ app.innerHTML = `
   <canvas id="cv"></canvas>
 </div>
 `;
+
+// ---- Music Widget (global, persists across all screens) ----
+const musicBtn = document.createElement('button');
+musicBtn.id = 'music-toggle';
+musicBtn.className = 'music-toggle-btn';
+musicBtn.setAttribute('aria-label', 'Toggle music');
+musicBtn.innerHTML = isMuted()
+  ? `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`
+  : `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+app.appendChild(musicBtn);
+
+function updateMusicIcon() {
+  musicBtn.innerHTML = isMuted()
+    ? `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`
+    : `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+}
+
+musicBtn.addEventListener('click', () => {
+  toggleMute();
+  updateMusicIcon();
+});
+
+// Start background music
+initMusic();
 
 const canvas = document.getElementById('cv') as HTMLCanvasElement;
 
