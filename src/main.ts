@@ -688,10 +688,12 @@ function refreshCustomMapsUI() {
     const playBtn = card;
     playBtn.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).classList.contains('custom-map-delete')) return;
+      sfxConfirm();
       startSavedMapMission(map.data);
     });
     card.querySelector('.custom-map-delete')!.addEventListener('click', (e) => {
       e.stopPropagation();
+      sfxDelete();
       if (confirm(`Delete "${map.name}"?`)) {
         deleteSavedMap(i);
       }
@@ -730,8 +732,8 @@ function confirmSave() {
   show('menu');
 }
 
-document.getElementById('save-cancel')!.onclick = closeSaveModal;
-document.getElementById('save-confirm')!.onclick = confirmSave;
+document.getElementById('save-cancel')!.onclick = () => { sfxBack(); closeSaveModal(); };
+document.getElementById('save-confirm')!.onclick = () => { sfxConfirm(); confirmSave(); };
 document.getElementById('save-name-input')!.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') confirmSave();
   if (e.key === 'Escape') closeSaveModal();
@@ -1041,10 +1043,12 @@ function refreshInProgressUI() {
     `;
     card.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).classList.contains('in-progress-delete')) return;
+      sfxConfirm();
       resumeInProgressSession(session.data);
     });
     card.querySelector('.in-progress-delete')!.addEventListener('click', (e) => {
       e.stopPropagation();
+      sfxDelete();
       if (confirm(`Delete this save?`)) {
         deleteInProgressSession(i);
       }
@@ -1295,6 +1299,7 @@ document.getElementById('build-clear')!.onclick = () => { sfxDelete(); pushHisto
 // Build tools
 document.querySelectorAll('.build-tool').forEach(btn => {
   btn.addEventListener('click', () => {
+    sfxSelect();
     buildTool = (btn as HTMLElement).dataset.tool as BuildToolType;
     document.querySelectorAll('.build-tool').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.build-stamp-btn').forEach(b => b.classList.remove('active'));
@@ -1316,6 +1321,7 @@ for (const name of STAMP_NAMES) {
   btn.className = 'build-stamp-btn';
   btn.innerHTML = `<div class="build-stamp-icon">${STAMP_SVG[name] || ''}</div><span>${name}</span>`;
   btn.onclick = () => {
+    sfxSelect();
     buildTool = 'room';
     buildSelectedStamp = name;
     document.querySelectorAll('.build-tool').forEach(b => b.classList.remove('active'));
@@ -1327,11 +1333,13 @@ for (const name of STAMP_NAMES) {
 
 // Share codes
 document.getElementById('build-export')!.onclick = () => {
+  sfxConfirm();
   const code = encodeRoomCode(customRoom);
   (document.getElementById('build-code') as HTMLTextAreaElement).value = code;
   navigator.clipboard.writeText(code).catch(() => {});
 };
 document.getElementById('build-import')!.onclick = () => {
+  sfxClick();
   try {
     const d = decodeRoomCode((document.getElementById('build-code') as HTMLTextAreaElement).value);
     pushHistory();
@@ -2083,13 +2091,13 @@ function handleInput() {
     }
 
     if (input.justPressed) {
-      if (state.hoveredShareBtn === 'close') { closeSharePanel(); }
-      else if (state.hoveredShareBtn === 'copy_code') { copyRoomCode(); }
-      else if (state.hoveredShareBtn === 'export_gif') { doExportGif(); }
-      else if (state.hoveredShareBtn === 'download_gif') { downloadShareGif(); }
+      if (state.hoveredShareBtn === 'close') { sfxBack(); closeSharePanel(); }
+      else if (state.hoveredShareBtn === 'copy_code') { sfxConfirm(); copyRoomCode(); }
+      else if (state.hoveredShareBtn === 'export_gif') { sfxClick(); doExportGif(); }
+      else if (state.hoveredShareBtn === 'download_gif') { sfxConfirm(); downloadShareGif(); }
       // Click outside panel closes it (but not during export)
       else if (!sp.exporting && !(mx >= px && mx <= px + panelW && my >= py && my <= py + panelH)) {
-        closeSharePanel();
+        sfxBack(); closeSharePanel();
       }
     }
     return; // block all other input while share panel is open
@@ -2102,7 +2110,7 @@ function handleInput() {
   if (shareHit) {
     state.hoveredHudBtn = 'share';
     canvas.style.cursor = 'pointer';
-    if (input.justPressed) { openSharePanel(); return; }
+    if (input.justPressed) { sfxClick(); openSharePanel(); return; }
   }
 
   // ---- Bottom HUD bar hover detection ----
@@ -2153,18 +2161,20 @@ function handleInput() {
   if (input.justPressed && input.mousePos.y > hudBarY) {
     const h = state.hoveredHudBtn;
     if (h === 'go') {
+      sfxConfirm();
       if (state.mode === 'planning') doGo();
       else if (state.mode === 'executing') { state.mode = 'paused'; }
       else if (state.mode === 'paused') { state.mode = 'executing'; }
     }
-    else if (h === 'save_stage') { saveStage(); state.stageJustCompleted = false; }
-    else if (h === 'reset') doReset();
-    else if (h === 'clear_level') doClearLevel();
-    else if (h === 'menu') show('menu');
-    else if (h === 'replay') doReplay();
-    else if (h === 'save_progress') { saveProgress(); showSaveConfirmation(); }
-    else if (h === 'edit_stage') { editStage(); }
+    else if (h === 'save_stage') { sfxConfirm(); saveStage(); state.stageJustCompleted = false; }
+    else if (h === 'reset') { sfxBack(); doReset(); }
+    else if (h === 'clear_level') { sfxDelete(); doClearLevel(); }
+    else if (h === 'menu') { sfxBack(); show('menu'); }
+    else if (h === 'replay') { sfxClick(); doReplay(); }
+    else if (h === 'save_progress') { sfxConfirm(); saveProgress(); showSaveConfirmation(); }
+    else if (h === 'edit_stage') { sfxClick(); editStage(); }
     else if (h && h.startsWith('stage_')) {
+      sfxTick();
       const idx = parseInt(h.split('_')[1]);
       if (state.mode === 'planning') {
         // Toggle selection: click again to deselect
@@ -2230,6 +2240,7 @@ function handleInput() {
     if (input.justPressed) {
       const items = getRadialItems(menu.wpIdx);
       if (menu.hoveredIdx >= 0) {
+        sfxSelect();
         const item = items[menu.hoveredIdx];
         const op = state.operators.find(o => o.id === menu.opId);
         if (op) {
