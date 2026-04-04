@@ -1492,17 +1492,6 @@ function handleInput() {
       const hudBarY = canvas.height - 36;
       const deployBarY = hudBarY - DEPLOY_PANEL_H - 4;
       if (input.mousePos.y > deployBarY) { state.interaction = { type: 'idle' }; state.pendingNode = null; return; }
-      // Check if clicking on a different operator - swap selection instead of placing node
-      for (const otherOp of state.operators) {
-        if (!otherOp.deployed || otherOp.id === op.id) continue;
-        if (distance(worldMouse, otherOp.position) < OP_R + 8) {
-          state.selectedOpId = otherOp.id;
-          state.interaction = { type: 'idle' };
-          state.pendingNode = null;
-          state.radialMenu = null;
-          return;
-        }
-      }
       // Check if clicking on the current operator itself - open radial menu
       if (distance(worldMouse, op.position) < OP_R + 8) {
         state.interaction = { type: 'idle' };
