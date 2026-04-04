@@ -18,8 +18,11 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
   const ctx = canvas.getContext('2d')!;
   const W = canvas.width, H = canvas.height;
   const walls = getWallsForCollision(state.room);
-  const sid = state.selectedOpId;
   const cam = state.camera;
+  const exporting = state.exportingGif;
+
+  // During GIF export: no selection (prevents grey-out), no planning overlays
+  const sid = exporting ? null : state.selectedOpId;
 
   // Clear full screen
   ctx.fillStyle = C.bg;
@@ -40,17 +43,19 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
     }
   }
 
-  // Grid (subtle)
-  ctx.strokeStyle = C.grid; ctx.lineWidth = 0.5 / cam.zoom;
-  const gridStep = GRID;
-  const viewLeft = cam.x - W / 2 / cam.zoom;
-  const viewTop = cam.y - H / 2 / cam.zoom;
-  const viewRight = cam.x + W / 2 / cam.zoom;
-  const viewBottom = cam.y + H / 2 / cam.zoom;
-  const gx0 = Math.floor(viewLeft / gridStep) * gridStep;
-  const gy0 = Math.floor(viewTop / gridStep) * gridStep;
-  for (let x = gx0; x <= viewRight; x += gridStep) { ctx.beginPath(); ctx.moveTo(x, viewTop); ctx.lineTo(x, viewBottom); ctx.stroke(); }
-  for (let y = gy0; y <= viewBottom; y += gridStep) { ctx.beginPath(); ctx.moveTo(viewLeft, y); ctx.lineTo(viewRight, y); ctx.stroke(); }
+  // Grid (skip during export for cleaner look)
+  if (!exporting) {
+    ctx.strokeStyle = C.grid; ctx.lineWidth = 0.5 / cam.zoom;
+    const gridStep = GRID;
+    const viewLeft = cam.x - W / 2 / cam.zoom;
+    const viewTop = cam.y - H / 2 / cam.zoom;
+    const viewRight = cam.x + W / 2 / cam.zoom;
+    const viewBottom = cam.y + H / 2 / cam.zoom;
+    const gx0 = Math.floor(viewLeft / gridStep) * gridStep;
+    const gy0 = Math.floor(viewTop / gridStep) * gridStep;
+    for (let x = gx0; x <= viewRight; x += gridStep) { ctx.beginPath(); ctx.moveTo(x, viewTop); ctx.lineTo(x, viewBottom); ctx.stroke(); }
+    for (let y = gy0; y <= viewBottom; y += gridStep) { ctx.beginPath(); ctx.moveTo(viewLeft, y); ctx.lineTo(viewRight, y); ctx.stroke(); }
+  }
 
   // FOV cones (clipped to floor area so they don't bleed into the void)
   const isExecMode = state.mode === 'executing' || state.mode === 'paused';
@@ -75,35 +80,37 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
   // Walls
   for (const w of state.room.walls) drawWall(ctx, w);
 
-  // Paths
-  for (const op of state.operators) {
-    if (!op.deployed) continue;
-    const grey = sid !== null && op.id !== sid;
-    drawPath(ctx, op, grey, state);
-  }
+  // Paths, waypoints, pie targets — skip entirely during GIF export (planning artifacts)
+  if (!exporting) {
+    for (const op of state.operators) {
+      if (!op.deployed) continue;
+      const grey = sid !== null && op.id !== sid;
+      drawPath(ctx, op, grey, state);
+    }
 
-  // Path preview (placing waypoints mode)
-  if (state.interaction.type === 'placing_waypoints') {
-    const inter = state.interaction;
-    const op = state.operators.find(o => o.id === inter.opId);
-    if (op && op.path.waypoints.length > 0) {
-      const last = op.path.waypoints[op.path.waypoints.length - 1];
-      ctx.strokeStyle = op.color; ctx.lineWidth = 1; ctx.globalAlpha = 0.35;
-      ctx.setLineDash([6, 4]);
-      ctx.beginPath(); ctx.moveTo(last.position.x, last.position.y);
-      ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    // Path preview (placing waypoints mode)
+    if (state.interaction.type === 'placing_waypoints') {
+      const inter = state.interaction;
+      const op = state.operators.find(o => o.id === inter.opId);
+      if (op && op.path.waypoints.length > 0) {
+        const last = op.path.waypoints[op.path.waypoints.length - 1];
+        ctx.strokeStyle = op.color; ctx.lineWidth = 1; ctx.globalAlpha = 0.35;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.moveTo(last.position.x, last.position.y);
+        ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      }
+    }
+
+    // Pie targets (dotted line + pizza icon)
+    for (const op of state.operators) {
+      if (!op.deployed || !op.pieTarget) continue;
+      const grey = sid !== null && op.id !== sid;
+      drawPieTarget(ctx, op, grey);
     }
   }
 
-  // Pie targets (dotted line + pizza icon)
-  for (const op of state.operators) {
-    if (!op.deployed || !op.pieTarget) continue;
-    const grey = sid !== null && op.id !== sid;
-    drawPieTarget(ctx, op, grey);
-  }
-
-   // Operators (deployed ones + the one currently being dragged from deploy panel)
-  const deployingOpId = state.interaction.type === 'deploying_op' ? state.interaction.opId : -1;
+  // Operators (deployed ones + the one currently being dragged from deploy panel)
+  const deployingOpId = exporting ? -1 : (state.interaction.type === 'deploying_op' ? state.interaction.opId : -1);
   const isExec = state.mode === 'executing' || state.mode === 'paused';
   for (const op of state.operators) {
     if (!op.deployed && op.id !== deployingOpId) continue;
@@ -112,13 +119,13 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
     drawOp(ctx, op, op.id === sid || isDragging, grey, isDragging, isExec);
   }
 
-  // Selection glow ring (world-space)
+  // Selection glow ring (world-space) — only in planning, never during export
   if (sid !== null && state.mode === 'planning') {
     const selOp = state.operators.find(o => o.id === sid && o.deployed);
     if (selOp) drawSelectionGlow(ctx, selOp);
   }
 
-  // Radial menu (world-space)
+  // Radial menu (world-space) — only in planning, never during export
   if (state.radialMenu && state.mode === 'planning') {
     drawRadialMenu(ctx, state.radialMenu, state);
   }
