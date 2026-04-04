@@ -760,6 +760,7 @@ function serializeSession(): SerializedSession {
           tempo: wp.tempo,
         })),
         tempo: os.tempo,
+        pieTarget: os.pieTarget ? { x: os.pieTarget.x, y: os.pieTarget.y } : null,
       })),
     })),
     currentStageIndex: state.currentStageIndex,
@@ -854,6 +855,7 @@ function restoreSession(data: SerializedSession) {
         tempo: wp.tempo,
       })),
       tempo: os.tempo,
+      pieTarget: os.pieTarget ? { x: os.pieTarget.x, y: os.pieTarget.y } : null,
     })),
   }));
   state.currentStageIndex = data.currentStageIndex || 0;
@@ -1485,9 +1487,10 @@ function saveStage() {
         op.startAngle = lastWp.facingOverride;
       }
     }
-    // Clear paths for next stage
+    // Clear paths and pie for next stage planning
     op.path.waypoints = [];
     op.path.splineLUT = null;
+    op.pieTarget = null;
   }
 
   state.popup = null;
@@ -1556,22 +1559,30 @@ function loadAndExecuteStage(stageIdx: number) {
   state.elapsedTime = 0;
   state.goCodesTriggered = { A: false, B: false, C: false };
 
-  // Restore operator positions and paths from this stage
-  for (const snap of stage.operatorStates) {
-    const op = state.operators.find(o => o.id === snap.opId);
-    if (!op) continue;
-    op.position = { x: snap.startPosition.x, y: snap.startPosition.y };
-    op.startPosition = { x: snap.startPosition.x, y: snap.startPosition.y };
-    op.angle = snap.startAngle;
-    op.startAngle = snap.startAngle;
-    op.path.waypoints = JSON.parse(JSON.stringify(snap.waypoints));
-    op.tempo = snap.tempo;
+  // Restore operator positions, paths, and pieTarget from this stage
+  for (const op of state.operators) {
+    if (!op.deployed) continue;
+    const snap = stage.operatorStates.find(s => s.opId === op.id);
+    if (snap) {
+      op.position = { x: snap.startPosition.x, y: snap.startPosition.y };
+      op.startPosition = { x: snap.startPosition.x, y: snap.startPosition.y };
+      op.angle = snap.startAngle;
+      op.startAngle = snap.startAngle;
+      op.path.waypoints = JSON.parse(JSON.stringify(snap.waypoints));
+      op.tempo = snap.tempo;
+      op.pieTarget = snap.pieTarget ? { x: snap.pieTarget.x, y: snap.pieTarget.y } : null;
+    } else {
+      // Operator not in this stage - clear its path but keep position
+      op.path.waypoints = [];
+      op.path.splineLUT = null;
+      op.pieTarget = null;
+    }
     op.distanceTraveled = 0;
     op.currentWaypointIndex = 0;
     op.isHolding = false;
     op.isMoving = false;
     op.reachedEnd = false;
-    op.smoothPosition = { x: op.position.x, y: op.position.y };
+    if (op.smoothPosition) op.smoothPosition = { x: op.position.x, y: op.position.y };
     rebuildPathLUT(op);
   }
 
@@ -1628,7 +1639,7 @@ function doReset() {
     state.stages.pop();
     state.currentStageIndex = state.stages.length;
 
-    // Restore operator positions and paths from pre-GO snapshot
+    // Restore operator positions, paths, and pieTarget from pre-GO snapshot
     for (const snap of state.preGoSnapshot.operatorStates) {
       const op = state.operators.find(o => o.id === snap.opId);
       if (!op) continue;
@@ -1638,6 +1649,7 @@ function doReset() {
       op.startAngle = snap.startAngle;
       op.path.waypoints = JSON.parse(JSON.stringify(snap.waypoints));
       op.tempo = snap.tempo;
+      op.pieTarget = snap.pieTarget ? { x: snap.pieTarget.x, y: snap.pieTarget.y } : null;
       op.distanceTraveled = 0;
       op.currentWaypointIndex = 0;
       op.isHolding = false;
@@ -1651,6 +1663,7 @@ function doReset() {
     // No snapshot - full reset
     for (const op of state.operators) {
       if (op.deployed) resetOperator(op);
+      op.pieTarget = null;
       op.path.waypoints = [];
       op.path.splineLUT = null;
       op.distanceTraveled = 0;
@@ -1693,6 +1706,7 @@ function doClearLevel() {
     op.startAngle = 0;
     op.path.waypoints = [];
     op.path.splineLUT = null;
+    op.pieTarget = null;
     op.distanceTraveled = 0;
     op.currentWaypointIndex = 0;
     op.isHolding = false;
