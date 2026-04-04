@@ -1468,6 +1468,7 @@ function saveStage() {
       startAngle: op.angle,
       waypoints: JSON.parse(JSON.stringify(op.path.waypoints)),
       tempo: op.tempo,
+      pieTarget: op.pieTarget ? { x: op.pieTarget.x, y: op.pieTarget.y } : null,
     })),
   };
   state.stages.push(stage);
@@ -1512,6 +1513,7 @@ function doGo() {
       startAngle: op.angle,
       waypoints: JSON.parse(JSON.stringify(op.path.waypoints)),
       tempo: op.tempo,
+      pieTarget: op.pieTarget ? { x: op.pieTarget.x, y: op.pieTarget.y } : null,
     })),
   };
 
@@ -1524,6 +1526,7 @@ function doGo() {
         startAngle: op.angle,
         waypoints: JSON.parse(JSON.stringify(op.path.waypoints)),
         tempo: op.tempo,
+        pieTarget: op.pieTarget ? { x: op.pieTarget.x, y: op.pieTarget.y } : null,
       })),
     };
     state.stages.push(stage);
