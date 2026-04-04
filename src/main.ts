@@ -784,13 +784,44 @@ window.addEventListener('keydown', (e) => {
 
 /** Save current paths as a stage, then prepare for next stage planning */
 function saveStage() {
+  // Case 1: After execution just completed (stageJustCompleted glow prompt)
+  // The stage was already auto-saved by doGo. Just transition to planning
+  // with operators at their current (end-of-route) positions, paths cleared.
+  if (state.stageJustCompleted) {
+    state.stageJustCompleted = false;
+    state.preGoSnapshot = null; // can't undo past this point
+    state.mode = 'planning';
+    state.currentStageIndex = state.stages.length;
+    state.executingStageIndex = -1;
+    // Operators are already at end positions from execution.
+    // Clear their paths and reset movement state for next stage planning.
+    for (const op of state.operators) {
+      if (!op.deployed) continue;
+      op.startPosition = { x: op.position.x, y: op.position.y };
+      op.startAngle = op.angle;
+      op.path.waypoints = [];
+      op.path.splineLUT = null;
+      op.distanceTraveled = 0;
+      op.currentWaypointIndex = 0;
+      op.isHolding = false;
+      op.isMoving = false;
+      op.reachedEnd = false;
+    }
+    state.popup = null;
+    state.radialMenu = null;
+    state.pendingNode = null;
+    state.speedSlider = null;
+    state.selectedOpId = null;
+    state.interaction = { type: 'idle' };
+    return;
+  }
+
+  // Case 2: Normal save during planning - snapshot current paths as a stage
   if (state.mode !== 'planning') return;
   const deployed = state.operators.filter(o => o.deployed);
   if (deployed.length === 0) return;
-  // Only save if at least one operator has a path in this stage
   if (!deployed.some(o => o.path.waypoints.length >= 2)) return;
 
-  // Snapshot current paths into a stage
   const stage: import('./types').Stage = {
     operatorStates: deployed.map(op => ({
       opId: op.id,
@@ -814,12 +845,11 @@ function saveStage() {
         op.startAngle = lastWp.facingOverride;
       }
     }
-    // Clear path for next stage planning
+    // Clear paths for next stage
     op.path.waypoints = [];
     op.path.splineLUT = null;
   }
 
-  // Clear UI state
   state.popup = null;
   state.radialMenu = null;
   state.pendingNode = null;
