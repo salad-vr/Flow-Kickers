@@ -2681,12 +2681,16 @@ function handleInput() {
       }
       // Determine floor level for this waypoint
       let wpFloor = state.activeFloor;
-      // Check if placing on stairs — auto-transition to destination floor
+      // Check if placing on stairs — the stair waypoint stays on the CURRENT floor
+      // (operator walks to stairs on this floor), then switch view to destination
+      // floor so the NEXT waypoint will be placed there
       const stair = getStairAtPoint(state.room, worldMouse.x, worldMouse.y, state.activeFloor);
       if (stair && stair.connectsFloors) {
+        // Stair waypoint stays on current floor — the path follower transitions
+        // when it reaches a waypoint whose floorLevel differs from the previous one
+        wpFloor = state.activeFloor;
         const destFloor = getStairDestFloor(stair, state.activeFloor);
-        wpFloor = destFloor;
-        state.activeFloor = destFloor; // Auto-switch view to destination floor
+        state.activeFloor = destFloor; // Switch view so next waypoint is on dest floor
       }
       op.path.waypoints.push(makeWaypoint(worldMouse, wpFloor));
       rebuildPathLUT(op);
