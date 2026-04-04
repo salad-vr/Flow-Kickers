@@ -37,3 +37,4 @@ export function createDeployedOperator(pos: { x: number; y: number }, colorIndex
 }
 
 export function resetOperatorId() { nextId = 1; }
+export function setOperatorNextId(id: number) { nextId = id; }

@@ -32,6 +32,19 @@ function loadStageForExport(state: GameState, stageIdx: number) {
   state.executingStageIndex = stageIdx;
 }
 
+function captureFrame(
+  canvas: HTMLCanvasElement, offCtx: CanvasRenderingContext2D,
+  gif: ReturnType<typeof GIFEncoder>, palette: number[][],
+  w: number, h: number, delay: number, state: GameState,
+) {
+  renderGame(canvas, state);
+  offCtx.drawImage(canvas, 0, 0, w, h);
+  gif.writeFrame(
+    applyPalette(offCtx.getImageData(0, 0, w, h).data, palette),
+    w, h, { palette, delay },
+  );
+}
+
 export async function exportGIF(
   state: GameState,
   onProgress?: (progress: number) => void,
@@ -42,23 +55,28 @@ export async function exportGIF(
   offscreen.width = w; offscreen.height = h;
   const offCtx = offscreen.getContext('2d')!;
   const gif = GIFEncoder();
-  const fps = 20, dt = 1 / fps, delay = Math.floor(1000 / fps);
-  const maxFramesPerStage = fps * 20; // safety cap per stage
-  const tailFrames = 5;
+
+  const fps = 20;
+  const dt = 1 / fps;
+  const delay = Math.floor(1000 / fps); // 50ms
+  const maxFramesPerStage = fps * 30;    // 30s safety cap
+  const leadInFrames = 4;                // 0.2s before action starts
+  const tailFrames = 4;                  // 0.2s after last route ends
 
   state.exportingGif = true;
 
   const numStages = state.stages.length;
   if (numStages === 0) { state.exportingGif = false; throw new Error('No stages to export'); }
 
-  // ---- Build palette from samples across stages ----
+  // ---- Build palette from representative frames ----
   const samples: Uint8ClampedArray[] = [];
   for (let si = 0; si < numStages; si++) {
     loadStageForExport(state, si);
+    // Sample start frame
     renderGame(canvas, state);
     offCtx.drawImage(canvas, 0, 0, w, h);
     samples.push(offCtx.getImageData(0, 0, w, h).data);
-    // Advance a bit for color variety
+    // Advance ~1s and sample mid-action
     for (let i = 0; i < fps; i++) updateSimulation(state, dt);
     renderGame(canvas, state);
     offCtx.drawImage(canvas, 0, 0, w, h);
@@ -66,41 +84,45 @@ export async function exportGIF(
   }
   const totalLen = samples.reduce((a, s) => a + s.length, 0);
   const combined = new Uint8ClampedArray(totalLen);
-  let offset = 0;
-  for (const s of samples) { combined.set(s, offset); offset += s.length; }
+  let off = 0;
+  for (const s of samples) { combined.set(s, off); off += s.length; }
   const palette = quantize(combined, 256);
 
   // ---- Record all stages sequentially ----
   let totalFrames = 0;
-  const estTotalFrames = numStages * fps * 5; // rough estimate for progress
+  const estTotal = numStages * fps * 6; // rough estimate for progress bar
 
   for (let si = 0; si < numStages; si++) {
     loadStageForExport(state, si);
 
-    // Frame 0 of this stage
-    renderGame(canvas, state);
-    offCtx.drawImage(canvas, 0, 0, w, h);
-    gif.writeFrame(applyPalette(offCtx.getImageData(0, 0, w, h).data, palette), w, h, { palette, delay });
-    totalFrames++;
+    // Lead-in: 0.2s of operators at start positions, no simulation
+    for (let i = 0; i < leadInFrames; i++) {
+      captureFrame(canvas, offCtx, gif, palette, w, h, delay, state);
+      totalFrames++;
+    }
 
-    let stageFrames = 0;
+    // Simulation frames
     let tailCount = -1;
+    let stageFrames = 0;
 
     while (stageFrames < maxFramesPerStage) {
       updateSimulation(state, dt);
-      renderGame(canvas, state);
-      offCtx.drawImage(canvas, 0, 0, w, h);
-      gif.writeFrame(applyPalette(offCtx.getImageData(0, 0, w, h).data, palette), w, h, { palette, delay });
+      captureFrame(canvas, offCtx, gif, palette, w, h, delay, state);
       stageFrames++;
       totalFrames++;
 
+      // Check if all routes are done
       const allDone = state.operators.every(
         o => o.reachedEnd || o.path.waypoints.length === 0 || !o.deployed,
       );
-      if (allDone && tailCount < 0) tailCount = 0;
-      if (tailCount >= 0) { tailCount++; if (tailCount >= tailFrames) break; }
 
-      if (onProgress) onProgress(Math.min(0.99, totalFrames / estTotalFrames));
+      if (allDone && tailCount < 0) tailCount = 0;
+      if (tailCount >= 0) {
+        tailCount++;
+        if (tailCount >= tailFrames) break;
+      }
+
+      if (onProgress) onProgress(Math.min(0.99, totalFrames / estTotal));
       if (stageFrames % 4 === 0) await new Promise(r => setTimeout(r, 0));
     }
   }

@@ -1297,3 +1297,29 @@ button:focus-visible,
   background: rgba(180, 70, 50, 0.2);
   color: #cc7766;
 }
+
+/* ---- In Progress Cards ---- */
+.in-progress-card {
+  position: relative;
+  border-color: rgba(85, 170, 102, 0.25);
+}
+
+.in-progress-card:hover {
+  border-color: rgba(85, 170, 102, 0.5);
+  box-shadow: 0 4px 12px rgba(85, 170, 102, 0.1);
+}
+
+.in-progress-card .room-card-name {
+  color: rgba(85, 170, 102, 0.7);
+  font-size: 9px;
+}
+
+.in-progress-card:hover .room-card-name {
+  color: rgba(85, 170, 102, 0.9);
+}
+
+.in-progress-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}

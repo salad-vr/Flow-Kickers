@@ -1,15 +1,15 @@
 import './style.css';
 import type { GameState, Operator, Interaction, NodePopup, Room, SharePanelBtn, PendingNode, SpeedSliderState, RadialMenu, RadialMenuItem, HudBtn } from './types';
 import type { Vec2 } from './math/vec2';
-import { C, OP_R, NODE_R, DEPLOY_PANEL_H, DEPLOY_OP_SPACING, GRID, DOOR_W, WALL_W, makeWaypoint } from './types';
+import { C, OP_R, NODE_R, DEPLOY_PANEL_H, DEPLOY_OP_SPACING, GRID, DOOR_W, WALL_W, OP_SPEED, FOV_ANG, FOV_DIST, makeWaypoint } from './types';
 import { startGameLoop } from './core/gameLoop';
 import { initInput, getInput, clearFrameInput } from './core/inputManager';
 import { ROOM_TEMPLATES, type RoomTemplateName, STAMP_TEMPLATES, STAMP_NAMES, type StampName } from './room/templates';
-import { createOperator, resetOperatorId, resetOperator } from './operator/operator';
+import { createOperator, resetOperatorId, resetOperator, setOperatorNextId } from './operator/operator';
 import { rebuildPathLUT } from './operator/pathFollower';
 import { distance, copy, distToSegment, closestPointOnSegment } from './math/vec2';
 import { updateSimulation, resetSimulation, startExecution } from './core/simulation';
-import { renderGame, resetSharePanelAnim } from './rendering/renderer';
+import { renderGame, resetSharePanelAnim, SHARE_BTN, getShareBtnX } from './rendering/renderer';
 import { exportGIF, downloadBlob } from './export/gifExporter';
 import { cornerFedRoom } from './room/templates';
 import { makeWall, makeThreat, createEmptyRoom } from './room/room';
@@ -36,6 +36,11 @@ app.innerHTML = `
     </div>
 
     <button id="btn-start" class="menu-start-btn">START MISSION</button>
+
+    <div id="in-progress-section" class="menu-section" style="display:none">
+      <label class="menu-label">In Progress</label>
+      <div id="in-progress-btns" class="menu-room-grid"></div>
+    </div>
 
     <div class="menu-code-section">
       <div class="menu-code-header">
@@ -672,6 +677,318 @@ document.getElementById('save-name-input')!.addEventListener('keydown', (e) => {
 // Initialize custom maps UI on load
 refreshCustomMapsUI();
 
+// ---- Session Persistence (refresh protection + save progress) ----
+const SESSION_KEY = 'flowkickers_active_session';
+const IN_PROGRESS_KEY = 'flowkickers_in_progress';
+
+interface SerializedSession {
+  room: {
+    name: string;
+    w: any[][];
+    t: number[][];
+    e: number[][];
+    f: number[][];
+  };
+  operators: {
+    id: number;
+    position: { x: number; y: number };
+    angle: number;
+    color: string;
+    label: string;
+    deployed: boolean;
+    startPosition: { x: number; y: number };
+    startAngle: number;
+    tempo: number;
+    pieTarget: { x: number; y: number } | null;
+    waypoints: any[];
+  }[];
+  stages: any[];
+  currentStageIndex: number;
+  camera: { x: number; y: number; zoom: number };
+  goCodesTriggered: Record<string, boolean>;
+  roomCleared: boolean;
+  selRoom: string;
+  selOpCount: number;
+}
+
+interface SavedSession {
+  name: string;
+  data: SerializedSession;
+  savedAt: number;
+}
+
+function serializeSession(): SerializedSession {
+  return {
+    room: {
+      name: state.room.name,
+      w: state.room.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.doors.map(d => [d.pos, d.open ? 1 : 0])]),
+      t: state.room.threats.map(t => [t.position.x, t.position.y, t.neutralized ? 1 : 0]),
+      e: state.room.entryPoints.map(e => [e.x, e.y]),
+      f: state.room.floor.map(p => [p.x, p.y]),
+    },
+    operators: state.operators.map(op => ({
+      id: op.id,
+      position: { x: op.position.x, y: op.position.y },
+      angle: op.angle,
+      color: op.color,
+      label: op.label,
+      deployed: op.deployed,
+      startPosition: { x: op.startPosition.x, y: op.startPosition.y },
+      startAngle: op.startAngle,
+      tempo: op.tempo,
+      pieTarget: op.pieTarget ? { x: op.pieTarget.x, y: op.pieTarget.y } : null,
+      waypoints: op.path.waypoints.map(wp => ({
+        position: { x: wp.position.x, y: wp.position.y },
+        facingOverride: wp.facingOverride,
+        lookTarget: wp.lookTarget ? { x: wp.lookTarget.x, y: wp.lookTarget.y } : null,
+        hold: wp.hold,
+        goCode: wp.goCode,
+        tempo: wp.tempo,
+      })),
+    })),
+    stages: state.stages.map(s => ({
+      operatorStates: s.operatorStates.map(os => ({
+        opId: os.opId,
+        startPosition: { x: os.startPosition.x, y: os.startPosition.y },
+        startAngle: os.startAngle,
+        waypoints: os.waypoints.map(wp => ({
+          position: { x: wp.position.x, y: wp.position.y },
+          facingOverride: wp.facingOverride,
+          lookTarget: wp.lookTarget ? { x: wp.lookTarget.x, y: wp.lookTarget.y } : null,
+          hold: wp.hold,
+          goCode: wp.goCode,
+          tempo: wp.tempo,
+        })),
+        tempo: os.tempo,
+      })),
+    })),
+    currentStageIndex: state.currentStageIndex,
+    camera: { x: state.camera.x, y: state.camera.y, zoom: state.camera.zoom },
+    goCodesTriggered: { ...state.goCodesTriggered },
+    roomCleared: state.roomCleared,
+    selRoom,
+    selOpCount,
+  };
+}
+
+function restoreSession(data: SerializedSession) {
+  // Restore room
+  const room: Room = {
+    name: data.room.name,
+    walls: (data.room.w || []).map((w: any[]) => {
+      const wall = makeWall(w[0], w[1], w[2], w[3]);
+      if (Array.isArray(w[4])) {
+        wall.doors = w[4].map((dd: any) => ({ pos: dd[0], open: dd[1] === 1 }));
+      }
+      return wall;
+    }),
+    threats: (data.room.t || []).map((t: number[]) => {
+      const threat = makeThreat(t[0], t[1]);
+      if (t[2] === 1) { threat.neutralized = true; threat.neutralizeTimer = 1; }
+      return threat;
+    }),
+    entryPoints: (data.room.e || []).map((e: number[]) => ({ x: e[0], y: e[1] })),
+    floor: (data.room.f || []).map((p: number[]) => ({ x: p[0], y: p[1] })),
+  };
+  state.room = room;
+
+  // Restore operators
+  resetOperatorId();
+  let maxOpId = 0;
+  state.operators = data.operators.map((od, i) => {
+    if (od.id > maxOpId) maxOpId = od.id;
+    const color = od.color || C.opColors[i % C.opColors.length];
+    const emptyPath: import('./types').WaypointPath = { waypoints: [], splineLUT: null, color };
+    const op: Operator = {
+      id: od.id,
+      position: { x: od.position.x, y: od.position.y },
+      angle: od.angle,
+      speed: OP_SPEED,
+      fovAngle: FOV_ANG,
+      fovRange: FOV_DIST,
+      color,
+      label: od.label,
+      path: emptyPath,
+      tempo: od.tempo,
+      deployed: od.deployed,
+      distanceTraveled: 0,
+      currentWaypointIndex: 0,
+      isHolding: false,
+      isMoving: false,
+      reachedEnd: false,
+      startPosition: { x: od.startPosition.x, y: od.startPosition.y },
+      startAngle: od.startAngle,
+      pieTarget: od.pieTarget ? { x: od.pieTarget.x, y: od.pieTarget.y } : null,
+      smoothPosition: { x: od.position.x, y: od.position.y },
+    };
+    // Restore waypoints
+    if (od.waypoints && od.waypoints.length > 0) {
+      op.path.waypoints = od.waypoints.map((wp: any) => ({
+        position: { x: wp.position.x, y: wp.position.y },
+        facingOverride: wp.facingOverride,
+        lookTarget: wp.lookTarget ? { x: wp.lookTarget.x, y: wp.lookTarget.y } : null,
+        hold: wp.hold,
+        goCode: wp.goCode,
+        tempo: wp.tempo,
+      }));
+      if (op.path.waypoints.length >= 2) {
+        rebuildPathLUT(op);
+      }
+    }
+    return op;
+  });
+  setOperatorNextId(maxOpId + 1);
+
+  // Restore stages
+  state.stages = (data.stages || []).map((s: any) => ({
+    operatorStates: s.operatorStates.map((os: any) => ({
+      opId: os.opId,
+      startPosition: { x: os.startPosition.x, y: os.startPosition.y },
+      startAngle: os.startAngle,
+      waypoints: os.waypoints.map((wp: any) => ({
+        position: { x: wp.position.x, y: wp.position.y },
+        facingOverride: wp.facingOverride,
+        lookTarget: wp.lookTarget ? { x: wp.lookTarget.x, y: wp.lookTarget.y } : null,
+        hold: wp.hold,
+        goCode: wp.goCode,
+        tempo: wp.tempo,
+      })),
+      tempo: os.tempo,
+    })),
+  }));
+  state.currentStageIndex = data.currentStageIndex || 0;
+
+  // Restore camera
+  state.camera = { x: data.camera.x, y: data.camera.y, zoom: data.camera.zoom };
+
+  // Restore misc state
+  state.goCodesTriggered = { A: false, B: false, C: false, ...data.goCodesTriggered } as Record<import('./types').GoCode, boolean>;
+  state.roomCleared = data.roomCleared || false;
+  state.mode = 'planning';
+  state.elapsedTime = 0;
+  state.interaction = { type: 'idle' };
+  state.popup = null;
+  state.radialMenu = null;
+  state.pendingNode = null;
+  state.speedSlider = null;
+  state.selectedOpId = null;
+  state.executingStageIndex = -1;
+  state.isReplaying = false;
+  state.stageJustCompleted = false;
+  state.preGoSnapshot = null;
+  state.viewingStageIndex = -1;
+
+  // Restore selection state
+  selRoom = (data.selRoom || 'Corner Fed') as RoomTemplateName;
+  selOpCount = data.selOpCount || 7;
+}
+
+function saveSessionToStorage() {
+  if (state.screen !== 'game') return;
+  // Only save in planning or paused modes (not mid-execution)
+  if (state.mode === 'executing') return;
+  try {
+    const data = serializeSession();
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
+  } catch { /* ignore quota errors */ }
+}
+
+function clearSessionStorage() {
+  sessionStorage.removeItem(SESSION_KEY);
+}
+
+function loadSessionFromStorage(): SerializedSession | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+// Auto-save session before page unload (refresh/close)
+window.addEventListener('beforeunload', () => {
+  saveSessionToStorage();
+});
+
+// ---- In Progress saves (localStorage) ----
+function loadInProgressSessions(): SavedSession[] {
+  try {
+    const raw = localStorage.getItem(IN_PROGRESS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveInProgressToStorage(sessions: SavedSession[]) {
+  localStorage.setItem(IN_PROGRESS_KEY, JSON.stringify(sessions));
+}
+
+function saveProgress() {
+  const data = serializeSession();
+  const sessions = loadInProgressSessions();
+  const roomName = state.room.name || selRoom;
+  const stageCount = state.stages.length;
+  const deployedCount = state.operators.filter(o => o.deployed).length;
+  const name = `${roomName} - ${deployedCount} ops, ${stageCount} stage${stageCount !== 1 ? 's' : ''}`;
+
+  sessions.push({
+    name,
+    data,
+    savedAt: Date.now(),
+  });
+  saveInProgressToStorage(sessions);
+  refreshInProgressUI();
+}
+
+function deleteInProgressSession(index: number) {
+  const sessions = loadInProgressSessions();
+  sessions.splice(index, 1);
+  saveInProgressToStorage(sessions);
+  refreshInProgressUI();
+}
+
+function resumeInProgressSession(data: SerializedSession) {
+  restoreSession(data);
+  show('game');
+}
+
+function refreshInProgressUI() {
+  const sessions = loadInProgressSessions();
+  const container = document.getElementById('in-progress-btns')!;
+  const section = document.getElementById('in-progress-section')!;
+  container.innerHTML = '';
+
+  if (sessions.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  section.style.display = '';
+  for (let i = 0; i < sessions.length; i++) {
+    const session = sessions[i];
+    const card = document.createElement('div');
+    card.className = 'room-card in-progress-card';
+    const timeStr = new Date(session.savedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    card.innerHTML = `
+      <div class="room-card-preview"><svg viewBox="0 0 60 48"><rect x="8" y="6" width="44" height="34" fill="none" stroke="#55aa66" stroke-width="1.5" opacity=".5"/><text x="30" y="25" text-anchor="middle" fill="#55aa66" font-size="7" opacity=".6" font-family="var(--mono)">WIP</text><text x="30" y="40" text-anchor="middle" fill="var(--cream)" font-size="5" opacity=".3" font-family="var(--mono)">${timeStr}</text></svg></div>
+      <span class="room-card-name">${session.name}</span>
+      <button class="custom-map-delete in-progress-delete" title="Delete save">&times;</button>
+    `;
+    card.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).classList.contains('in-progress-delete')) return;
+      resumeInProgressSession(session.data);
+    });
+    card.querySelector('.in-progress-delete')!.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (confirm(`Delete this save?`)) {
+        deleteInProgressSession(i);
+      }
+    });
+    container.appendChild(card);
+  }
+}
+
+// Initialize in-progress UI on load
+refreshInProgressUI();
+
 function snapGrid(v: number) { return Math.round(v / GRID) * GRID; }
 function snapVec(p: Vec2): Vec2 { return { x: snapGrid(p.x), y: snapGrid(p.y) }; }
 
@@ -998,6 +1315,11 @@ function show(s: 'menu' | 'tut' | 'build' | 'game') {
   }
   if (s === 'build') {
     requestAnimationFrame(() => sizeBuildCanvas());
+  }
+  // Clear session storage when intentionally going back to menu
+  if (s === 'menu') {
+    clearSessionStorage();
+    refreshInProgressUI();
   }
   // Re-trigger entrance animation for menu-content when coming back to menu
   if (s === 'menu' || s === 'tut') {
@@ -1399,8 +1721,14 @@ function closeSharePanel() {
   state.hoveredShareBtn = null;
 }
 
+// Visual confirmation overlay for save progress
+let saveConfirmTimer = 0;
+function showSaveConfirmation() {
+  saveConfirmTimer = 90; // ~1.5 seconds at 60fps
+}
+
 async function doExportGif() {
-  if (!state.operators.some(op => op.path.waypoints.length >= 2)) return;
+  if (state.stages.length === 0) return;
   state.sharePanel.exporting = true;
   state.sharePanel.exportProgress = 0;
   state.sharePanel.gifBlob = null;
@@ -1607,30 +1935,37 @@ function handleInput() {
     return; // block all other input while share panel is open
   }
 
-  // HUD hover detection (runs every frame, all modes)
-  const hudBarY = canvas.height - 36;
+  // ---- Top-right SHARE button hover/click (always active) ----
   const W = canvas.width;
+  const shareBx = getShareBtnX(W);
+  const shareHit = hitBtn(input.mousePos, shareBx, SHARE_BTN.y, SHARE_BTN.w, SHARE_BTN.h);
+  if (shareHit) {
+    state.hoveredHudBtn = 'share';
+    canvas.style.cursor = 'pointer';
+    if (input.justPressed) { openSharePanel(); return; }
+  }
+
+  // ---- Bottom HUD bar hover detection ----
+  const hudBarY = canvas.height - 36;
   const btnY = hudBarY + 5;
-  // HUD button positions (must match renderer drawHUD exactly)
-  // Layout: CLEAR(left) | ... [stage dots centered] ... | SAVE STAGE | GO! | RESET | REPLAY | SHARE(right)
-  const rightBlockX = W / 2 + 20; // right side starts here
-  const hudBtns = {
+  const rightBlockX = W / 2 + 20;
+  const hudBtns: Record<string, { x: number; y: number; w: number; h: number }> = {
     clear_level: { x: 8, y: btnY, w: 56, h: 26 },
     menu: { x: 72, y: btnY, w: 50, h: 26 },
+    save_progress: { x: 130, y: btnY, w: 50, h: 26 },
     save_stage: { x: rightBlockX, y: btnY, w: 100, h: 26 },
     go: { x: rightBlockX + 108, y: btnY, w: 70, h: 26 },
     reset: { x: rightBlockX + 186, y: btnY, w: 56, h: 26 },
     replay: { x: rightBlockX + 250, y: btnY, w: 60, h: 26 },
-    share: { x: W - 64, y: btnY, w: 56, h: 26 },
   };
   if (input.mousePos.y > hudBarY) {
     canvas.style.cursor = 'default';
-    state.hoveredHudBtn = null;
+    if (!shareHit) state.hoveredHudBtn = null;
     for (const [key, b] of Object.entries(hudBtns)) {
       if (hitBtn(input.mousePos, b.x, b.y, b.w, b.h)) { state.hoveredHudBtn = key as HudBtn; break; }
     }
     if (state.hoveredHudBtn) canvas.style.cursor = 'pointer';
-  } else {
+  } else if (!shareHit) {
     state.hoveredHudBtn = null;
     canvas.style.cursor = 'crosshair';
   }
@@ -1648,7 +1983,7 @@ function handleInput() {
     else if (h === 'clear_level') doClearLevel();
     else if (h === 'menu') show('menu');
     else if (h === 'replay') doReplay();
-    else if (h === 'share') openSharePanel();
+    else if (h === 'save_progress') { saveProgress(); showSaveConfirmation(); }
     return;
   }
 
@@ -2238,7 +2573,33 @@ function update(dt: number) {
 }
 
 function renderFrame() {
-  if (state.screen === 'game') renderGame(canvas, state);
+  if (state.screen === 'game') {
+    renderGame(canvas, state);
+    // Draw save confirmation overlay
+    if (saveConfirmTimer > 0) {
+      saveConfirmTimer--;
+      const ctx = canvas.getContext('2d')!;
+      const alpha = Math.min(1, saveConfirmTimer / 20); // fade out in last 20 frames
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.92;
+      const msg = 'PROGRESS SAVED';
+      ctx.font = 'bold 14px monospace';
+      const tw = ctx.measureText(msg).width;
+      const px = canvas.width / 2 - tw / 2 - 20;
+      const py = 70;
+      const pw = tw + 40, ph = 36;
+      ctx.fillStyle = 'rgba(30,60,40,0.95)';
+      ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 6); ctx.fill();
+      ctx.strokeStyle = '#55aa66';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 6); ctx.stroke();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#88dd88';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(msg, canvas.width / 2, py + ph / 2);
+      ctx.restore();
+    }
+  }
   if (document.getElementById('build-screen')!.style.display !== 'none') renderBuild();
 }
 
@@ -2523,5 +2884,25 @@ function drawBuildWall(ctx: CanvasRenderingContext2D, w: { a: Vec2; b: Vec2; doo
     ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, Math.PI * 2); ctx.fill();
   }
 }
+
+// ---- Restore session on page load (refresh protection) ----
+const savedSession = loadSessionFromStorage();
+if (savedSession) {
+  try {
+    restoreSession(savedSession);
+    clearSessionStorage();
+    show('game');
+  } catch (e) {
+    console.warn('Failed to restore session:', e);
+    clearSessionStorage();
+  }
+}
+
+// Auto-save session periodically while in game
+setInterval(() => {
+  if (state.screen === 'game' && state.mode !== 'executing') {
+    saveSessionToStorage();
+  }
+}, 5000);
 
 startGameLoop(update, renderFrame);

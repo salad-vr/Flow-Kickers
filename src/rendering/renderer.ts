@@ -742,9 +742,12 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
   const rightBlockX = W / 2 + 20;
   const totalStages = state.stages.length;
 
-  // ---- Left: CLEAR + MENU ----
+  // ---- Left: CLEAR + MENU + SAVE ----
   drawHudBtn(ctx, 8, by, 56, 26, 'CLEAR', '#cc5544', hov === 'clear_level');
   drawHudBtn(ctx, 72, by, 50, 26, 'MENU', C.hudText, hov === 'menu');
+  if (mode === 'planning') {
+    drawHudBtn(ctx, 130, by, 50, 26, 'SAVE', '#55aa66', hov === 'save_progress');
+  }
 
   // ---- Center: Stage indicators (numbered, bigger) ----
   if (totalStages > 0) {
@@ -799,28 +802,8 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
     drawHudBtn(ctx, rightBlockX + 250, by, 60, 26, 'REPLAY', C.accent, hov === 'replay');
   }
 
-  drawHudBtn(ctx, W - 64, by, 56, 26, 'SHARE', C.hudText, hov === 'share');
-
-  // Mode indicator top-right (rounded, polished)
-  ctx.beginPath();
-  ctx.roundRect(W - 114, 8, 106, 24, 6);
-  ctx.fillStyle = C.hud;
-  ctx.fill();
-  ctx.strokeStyle = mode === 'executing' ? C.cleared : 'rgba(232,223,198,0.25)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  // Subtle pulse for executing
-  if (mode === 'executing') {
-    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 500);
-    ctx.globalAlpha = 0.15 * pulse;
-    ctx.fillStyle = C.cleared;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-  ctx.fillStyle = mode === 'executing' ? C.cleared : C.hudBright;
-  ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-  ctx.fillText(mode.toUpperCase(), W - 16, 20);
-  ctx.textBaseline = 'alphabetic';
+  // ---- Top-right: SHARE button (prominent, always visible) ----
+  drawShareButton(ctx, W, hov === 'share');
 
   // Flow Kickers logo top-left - matches menu title style
   ctx.save();
@@ -890,6 +873,65 @@ function drawHudBtn(ctx: CanvasRenderingContext2D, x: number, y: number, w: numb
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(label, x + w / 2, drawY + h / 2);
+  ctx.textBaseline = 'alphabetic';
+  ctx.globalAlpha = 1;
+}
+
+// Share button dimensions (used by renderer + input handler)
+export const SHARE_BTN = { x: 0, y: 10, w: 90, h: 30, margin: 12 };
+export function getShareBtnX(canvasW: number) { return canvasW - SHARE_BTN.w - SHARE_BTN.margin; }
+
+function drawShareButton(ctx: CanvasRenderingContext2D, W: number, hovered: boolean) {
+  const bx = getShareBtnX(W), by = SHARE_BTN.y, bw = SHARE_BTN.w, bh = SHARE_BTN.h;
+  const r = 6;
+
+  // Smooth hover
+  if (!hudBtnHoverT['_share_top']) hudBtnHoverT['_share_top'] = 0;
+  const target = hovered ? 1 : 0;
+  hudBtnHoverT['_share_top'] += (target - hudBtnHoverT['_share_top']) * 0.18;
+  const t = hudBtnHoverT['_share_top'];
+
+  // Background
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, r);
+  ctx.fillStyle = `rgba(${18 + 20 * t},${30 + 22 * t},${48 + 24 * t},${0.92 + 0.05 * t})`;
+  ctx.fill();
+
+  // Border glow
+  if (t > 0.05) { ctx.shadowColor = C.accent; ctx.shadowBlur = 8 * t; }
+  ctx.strokeStyle = `rgba(${80 + 152 * t},${75 + 148 * t},${60 + 138 * t},${0.5 + 0.5 * t})`;
+  ctx.lineWidth = 1.2 + 0.4 * t;
+  ctx.stroke();
+  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+
+  // Share icon (simple upload/share arrow) - left of text
+  const iconX = bx + 18, iconY = by + bh / 2;
+  ctx.strokeStyle = t > 0.5 ? C.hudBright : C.hudText;
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // Arrow pointing up
+  ctx.beginPath();
+  ctx.moveTo(iconX, iconY + 4);
+  ctx.lineTo(iconX, iconY - 4);
+  ctx.lineTo(iconX - 3.5, iconY - 0.5);
+  ctx.moveTo(iconX, iconY - 4);
+  ctx.lineTo(iconX + 3.5, iconY - 0.5);
+  ctx.stroke();
+  // Tray
+  ctx.beginPath();
+  ctx.moveTo(iconX - 5, iconY + 1);
+  ctx.lineTo(iconX - 5, iconY + 5);
+  ctx.lineTo(iconX + 5, iconY + 5);
+  ctx.lineTo(iconX + 5, iconY + 1);
+  ctx.stroke();
+
+  // Label
+  ctx.fillStyle = t > 0.5 ? C.hudBright : C.accent;
+  ctx.globalAlpha = 0.75 + 0.25 * t;
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('SHARE', bx + bw / 2 + 7, by + bh / 2);
   ctx.textBaseline = 'alphabetic';
   ctx.globalAlpha = 1;
 }

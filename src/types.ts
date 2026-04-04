@@ -49,17 +49,18 @@ export interface NodePopup { opId: number; wpIdx: number; position: Vec2; }
 
 export interface Camera { x: number; y: number; zoom: number; }
 
-export type HudBtn = 'go' | 'reset' | 'menu' | 'share' | 'save_stage' | 'replay' | 'clear_level' | null;
+export type HudBtn = 'go' | 'reset' | 'menu' | 'share' | 'save_stage' | 'replay' | 'clear_level' | 'save_progress' | null;
 
 /** A snapshot of all operator paths + start positions for one phase of the plan */
 export interface Stage {
-  /** Per-operator snapshot: startPos, startAngle, waypoints */
+  /** Per-operator snapshot: startPos, startAngle, waypoints, pieTarget */
   operatorStates: {
     opId: number;
     startPosition: Vec2;
     startAngle: number;
     waypoints: Waypoint[];
     tempo: number;
+    pieTarget: Vec2 | null;
   }[];
 }
 
