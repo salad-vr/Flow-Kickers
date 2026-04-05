@@ -143,6 +143,15 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
     }
   }
 
+  // Room labels
+  for (const lbl of state.room.labels || []) {
+    ctx.fillStyle = 'rgba(200,195,180,0.85)';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lbl.text, lbl.position.x, lbl.position.y);
+  }
+
   // FOV cones (clipped to floor area so they don't bleed into the void)
   const isExecMode = state.mode === 'executing' || state.mode === 'paused';
   if (fl.length > 0) {

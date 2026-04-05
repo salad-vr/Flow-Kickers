@@ -392,6 +392,7 @@ app.innerHTML = `
           <button class="build-tool" data-tool="object"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" fill="currentColor" opacity=".3" stroke="currentColor" stroke-width="1.5"/></svg></div><span>Object</span><kbd>5</kbd></button>
           <button class="build-tool" data-tool="stairs"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M3 17h4v-4h4v-4h4v-4h2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></div><span>Stairs</span><kbd>6</kbd></button>
           <button class="build-tool" data-tool="threat"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="4.5" x2="10" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="13" r="1.2" fill="currentColor"/></svg></div><span>Threat</span><kbd>7</kbd></button>
+          <button class="build-tool" data-tool="label"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><text x="10" y="14" text-anchor="middle" fill="currentColor" font-size="12" font-weight="bold" font-family="monospace">T</text></svg></div><span>Label</span><kbd>9</kbd></button>
           <button class="build-tool" data-tool="eraser"><div class="build-tool-icon"><svg width="20" height="20" viewBox="0 0 20 20"><rect x="4" y="4" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/><line x1="4" y1="4" x2="16" y2="16" stroke="currentColor" stroke-width="1.5"/></svg></div><span>Eraser</span><kbd>8</kbd></button>
         </div>
       </div>
@@ -523,7 +524,7 @@ const state: GameState = {
 
 // ---- Build state ----
 let customRoom: Room = createEmptyRoom();
-type BuildToolType = 'line' | 'square' | 'delete' | 'door' | 'threat' | 'object' | 'stairs' | 'eraser' | 'room' | 'addfloor';
+type BuildToolType = 'line' | 'square' | 'delete' | 'door' | 'threat' | 'object' | 'stairs' | 'eraser' | 'label' | 'room' | 'addfloor';
 let buildTool: BuildToolType = 'line';
 let buildSelectedStamp: StampName = 'Simple Box';
 let buildDragStart: Vec2 | null = null;
@@ -616,7 +617,7 @@ function pushHistory() {
   buildHistory.push(JSON.stringify({
     w: customRoom.walls, t: customRoom.threats,
     e: customRoom.entryPoints, f: customRoom.floor,
-    o: customRoom.objects, fc: customRoom.floorCut,
+    o: customRoom.objects, fc: customRoom.floorCut, lb: customRoom.labels,
     floors: customRoom.floors,
   }));
   if (buildHistory.length > 50) buildHistory.shift();
@@ -626,7 +627,7 @@ function undoHistory() {
   const d = JSON.parse(buildHistory.pop()!);
   customRoom.walls = d.w; customRoom.threats = d.t;
   customRoom.entryPoints = d.e; customRoom.floor = d.f;
-  customRoom.objects = d.o || []; customRoom.floorCut = d.fc || [];
+  customRoom.objects = d.o || []; customRoom.floorCut = d.fc || []; customRoom.labels = d.lb || [];
   customRoom.floors = d.floors || [];
   refreshBuildFloorTabs();
 }
@@ -755,6 +756,7 @@ function roomFromSavedMap(mapData: SavedMap['data']): Room {
     floor: (mapData.f || []).map((p: number[]) => ({ x: p[0], y: p[1] })),
     objects: restoreObjects(mapData.o || []),
     floorCut: (mapData.fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
+    labels: ((mapData as any).lb || []).map((l: any) => ({ position: { x: l.position?.x ?? l[0], y: l.position?.y ?? l[1] }, text: l.text ?? l[2] ?? '' })),
     floors: (mapData.floors || []).map((fl: any) => ({
       level: fl.level,
       bounds: fl.bounds || { x: 0, y: 0, w: 0, h: 0 },
@@ -1028,6 +1030,7 @@ function restoreSession(data: SerializedSession) {
     floor: (data.room.f || []).map((p: number[]) => ({ x: p[0], y: p[1] })),
     objects: restoreObjects((data.room as any).o || []),
     floorCut: ((data.room as any).fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
+    labels: ((data.room as any).lb || []).map((l: any) => ({ position: { x: l.position?.x ?? l[0], y: l.position?.y ?? l[1] }, text: l.text ?? l[2] ?? '' })),
     floors: ((data.room as any).floors || []).map((fl: any) => ({
       level: fl.level,
       bounds: fl.bounds || { x: 0, y: 0, w: 0, h: 0 },
@@ -3462,7 +3465,16 @@ function renderBuild() {
     ctx.fillText(`New Floor F${newLvl + 1}  ${x1 - x0}\u00D7${y1 - y0}`, (x0 + x1) / 2, y0 - 6);
   }
 
-  // ---- Entry Points ----
+  // ---- Labels ----
+  for (const lbl of customRoom.labels) {
+    ctx.fillStyle = 'rgba(200,195,180,0.85)';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lbl.text, lbl.position.x, lbl.position.y);
+  }
+
+    // ---- Entry Points ----
   for (let i = 0; i < customRoom.entryPoints.length; i++) {
     const ep = customRoom.entryPoints[i];
     const pulse = buildAnimT * 20;
@@ -3586,7 +3598,7 @@ function renderBuild() {
 
   // Tool info HUD
   const toolLabel: Record<BuildToolType, string> = {
-    line: 'LINE', square: 'SQUARE', delete: 'DELETE', door: 'DOOR', threat: 'THREAT', object: 'OBJECT', stairs: 'STAIRS', eraser: 'ERASER', room: buildSelectedStamp.toUpperCase(), addfloor: 'ADD FLOOR',
+    line: 'LINE', square: 'SQUARE', delete: 'DELETE', door: 'DOOR', threat: 'THREAT', object: 'OBJECT', stairs: 'STAIRS', eraser: 'ERASER', label: 'LABEL', room: buildSelectedStamp.toUpperCase(), addfloor: 'ADD FLOOR',
   };
   const toolHint: Record<BuildToolType, string> = {
     line: 'Drag to draw a wall. Snaps to 15\u00B0 increments.',
@@ -3597,6 +3609,7 @@ function renderBuild() {
     object: 'Drag to place a filled object/furniture.',
     stairs: 'Drag to place a staircase.',
     eraser: 'Drag to erase floor tiles.',
+    label: 'Click to place a text label.',
     room: 'Drag to stamp a ' + buildSelectedStamp + ' room layout.',
     addfloor: 'Drag to select area for a new floor. Must overlap stairs.',
   };

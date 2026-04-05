@@ -147,5 +147,5 @@ export function getStairDestFloor(stair: import('../types').RoomObject, fromFloo
 }
 
 export function createEmptyRoom(): Room {
-  return { walls: [], threats: [], floor: [], name: 'Custom Room', entryPoints: [], objects: [], floorCut: [], floors: [] };
+  return { walls: [], threats: [], floor: [], name: 'Custom Room', entryPoints: [], objects: [], floorCut: [], labels: [], floors: [] };
 }

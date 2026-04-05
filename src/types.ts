@@ -4,6 +4,8 @@ import type { SplineLUT } from './math/spline';
 export interface DoorEntry { pos: number; open: boolean; }
 export interface WallSegment { a: Vec2; b: Vec2; doors: DoorEntry[]; }
 export interface ThreatMarker { position: Vec2; neutralized: boolean; neutralizeTimer: number; }
+/** Text label placed on the map */
+export interface RoomLabel { position: Vec2; text: string; }
 /** Filled rectangle object (furniture, obstacle) */
 export interface RoomObject {
   x: number; y: number; w: number; h: number;
@@ -25,7 +27,7 @@ export interface FloorLayer {
 
 export interface Room {
   walls: WallSegment[]; threats: ThreatMarker[]; floor: Vec2[];
-  name: string; entryPoints: Vec2[]; objects: RoomObject[]; floorCut: Vec2[];
+  name: string; entryPoints: Vec2[]; objects: RoomObject[]; floorCut: Vec2[]; labels: RoomLabel[];
   /** Upper floor layers (ground floor = level 0 is the Room's own walls/threats/etc) */
   floors: FloorLayer[];
 }
