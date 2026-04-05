@@ -2725,17 +2725,20 @@ function handleInput() {
         return;
       }
       // Determine floor level for this waypoint
-      let wpFloor = state.activeFloor;
-      // Check if placing on stairs — only transition if the PREVIOUS waypoint
-      // is on the same floor as activeFloor (prevents toggling back and forth)
+      const wpFloor = state.activeFloor;
+      // Check if placing on stairs — switch view to destination floor.
+      // Only transition once per stair: if the last waypoint was ALSO placed on
+      // this same stair, don't transition again (prevents toggling).
       const stair = getStairAtPoint(state.room, worldMouse.x, worldMouse.y, state.activeFloor);
-      const prevWp = op.path.waypoints.length > 0 ? op.path.waypoints[op.path.waypoints.length - 1] : null;
-      const prevFloor = prevWp ? prevWp.floorLevel : op.currentFloor;
-      if (stair && stair.connectsFloors && prevFloor === state.activeFloor) {
-        // Stair waypoint stays on current floor; view switches to destination
-        wpFloor = state.activeFloor;
-        const destFloor = getStairDestFloor(stair, state.activeFloor);
-        state.activeFloor = destFloor;
+      if (stair && stair.connectsFloors) {
+        const prevWp = op.path.waypoints.length > 0 ? op.path.waypoints[op.path.waypoints.length - 1] : null;
+        const prevOnSameStair = prevWp &&
+          prevWp.position.x >= stair.x && prevWp.position.x <= stair.x + stair.w &&
+          prevWp.position.y >= stair.y && prevWp.position.y <= stair.y + stair.h;
+        if (!prevOnSameStair) {
+          const destFloor = getStairDestFloor(stair, state.activeFloor);
+          state.activeFloor = destFloor;
+        }
       }
       op.path.waypoints.push(makeWaypoint(worldMouse, wpFloor));
       rebuildPathLUT(op);
