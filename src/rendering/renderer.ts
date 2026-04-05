@@ -101,14 +101,18 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
       ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
     } else if (obj.type === 'stairs') {
       const connected = obj.connectsFloors != null;
-      ctx.fillStyle = connected ? 'rgba(55,80,100,0.6)' : 'rgba(55,60,70,0.6)';
+      // Background fill
+      ctx.fillStyle = connected ? 'rgba(45,70,90,0.7)' : 'rgba(55,60,70,0.6)';
       ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
-      ctx.strokeStyle = connected ? 'rgba(100,160,200,0.7)' : 'rgba(80,85,95,0.7)';
-      ctx.lineWidth = connected ? 1.5 : 1;
+      // Border
+      ctx.strokeStyle = connected ? 'rgba(100,170,210,0.8)' : 'rgba(80,85,95,0.7)';
+      ctx.lineWidth = connected ? 2 : 1;
       ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
+      // Step lines
       const steps = Math.max(2, Math.round(Math.min(obj.w, obj.h) / 10));
       const isWide = obj.w > obj.h;
-      ctx.strokeStyle = 'rgba(120,125,135,0.4)';
+      ctx.strokeStyle = connected ? 'rgba(140,180,210,0.5)' : 'rgba(120,125,135,0.4)';
+      ctx.lineWidth = 1;
       for (let i = 1; i < steps; i++) {
         const frac = i / steps;
         if (isWide) {
@@ -119,14 +123,21 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
           ctx.beginPath(); ctx.moveTo(obj.x, ly); ctx.lineTo(obj.x + obj.w, ly); ctx.stroke();
         }
       }
-      // Stair connection label
+      // Connection label with arrow and floor number
       if (connected) {
         const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2;
-        ctx.fillStyle = 'rgba(100,180,220,0.8)'; ctx.font = `bold ${Math.min(12, obj.w / 4)}px monospace`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const fontSize = Math.max(9, Math.min(14, Math.min(obj.w, obj.h) / 3));
         const destFloor = obj.connectsFloors![0] === activeFloor ? obj.connectsFloors![1] : obj.connectsFloors![0];
         const arrow = destFloor > activeFloor ? '\u2191' : '\u2193';
-        ctx.fillText(`${arrow} F${destFloor + 1}`, cx, cy);
+        // Background pill for readability
+        const label = `${arrow} F${destFloor + 1}`;
+        ctx.font = `bold ${fontSize}px monospace`;
+        const tw = ctx.measureText(label).width;
+        ctx.fillStyle = 'rgba(12,21,37,0.7)';
+        ctx.beginPath(); ctx.roundRect(cx - tw / 2 - 4, cy - fontSize / 2 - 2, tw + 8, fontSize + 4, 3); ctx.fill();
+        ctx.fillStyle = 'rgba(100,190,230,0.95)';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(label, cx, cy);
         ctx.textBaseline = 'alphabetic';
       }
     }

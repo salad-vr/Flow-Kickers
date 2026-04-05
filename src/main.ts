@@ -2681,16 +2681,16 @@ function handleInput() {
       }
       // Determine floor level for this waypoint
       let wpFloor = state.activeFloor;
-      // Check if placing on stairs — the stair waypoint stays on the CURRENT floor
-      // (operator walks to stairs on this floor), then switch view to destination
-      // floor so the NEXT waypoint will be placed there
+      // Check if placing on stairs — only transition if the PREVIOUS waypoint
+      // is on the same floor as activeFloor (prevents toggling back and forth)
       const stair = getStairAtPoint(state.room, worldMouse.x, worldMouse.y, state.activeFloor);
-      if (stair && stair.connectsFloors) {
-        // Stair waypoint stays on current floor — the path follower transitions
-        // when it reaches a waypoint whose floorLevel differs from the previous one
+      const prevWp = op.path.waypoints.length > 0 ? op.path.waypoints[op.path.waypoints.length - 1] : null;
+      const prevFloor = prevWp ? prevWp.floorLevel : op.currentFloor;
+      if (stair && stair.connectsFloors && prevFloor === state.activeFloor) {
+        // Stair waypoint stays on current floor; view switches to destination
         wpFloor = state.activeFloor;
         const destFloor = getStairDestFloor(stair, state.activeFloor);
-        state.activeFloor = destFloor; // Switch view so next waypoint is on dest floor
+        state.activeFloor = destFloor;
       }
       op.path.waypoints.push(makeWaypoint(worldMouse, wpFloor));
       rebuildPathLUT(op);
@@ -2905,6 +2905,7 @@ function handleInput() {
       if (op.id === state.selectedOpId) continue; // already handled above
       if (distance(worldMouse, op.position) < OP_R + 8) {
         state.selectedOpId = op.id;
+        state.activeFloor = op.currentFloor; // Follow operator's floor
         state.popup = null;
         state.radialMenu = null;
         state.pendingNode = null;
@@ -2915,6 +2916,7 @@ function handleInput() {
 
     if (state.interaction.type === 'idle') {
       state.selectedOpId = null; state.popup = null; state.radialMenu = null;
+      state.activeFloor = 0; // Snap back to ground floor when deselecting
     }
   }
 }
@@ -3147,11 +3149,22 @@ function update(dt: number) {
       if (op.deployed) prevOpFloors[op.id] = op.currentFloor;
     }
     updateSimulation(state, dt * state.playbackSpeed);
-    // Auto-switch active floor when any operator transitions floors
-    for (const op of state.operators) {
-      if (op.deployed && prevOpFloors[op.id] !== undefined && prevOpFloors[op.id] !== op.currentFloor) {
-        state.activeFloor = op.currentFloor;
-        break; // follow the first operator that transitions
+    // Auto-switch active floor when an operator transitions floors
+    // Prefer selected operator, otherwise follow the first one that transitions
+    let transitioned = false;
+    if (state.selectedOpId !== null) {
+      const selOp = state.operators.find(o => o.id === state.selectedOpId);
+      if (selOp && selOp.deployed && prevOpFloors[selOp.id] !== undefined && prevOpFloors[selOp.id] !== selOp.currentFloor) {
+        state.activeFloor = selOp.currentFloor;
+        transitioned = true;
+      }
+    }
+    if (!transitioned) {
+      for (const op of state.operators) {
+        if (op.deployed && prevOpFloors[op.id] !== undefined && prevOpFloors[op.id] !== op.currentFloor) {
+          state.activeFloor = op.currentFloor;
+          break;
+        }
       }
     }
     checkStageCompletion();
