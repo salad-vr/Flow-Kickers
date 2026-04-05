@@ -609,8 +609,30 @@ const NODE_RADIAL_ITEMS: RadialMenuItem[] = [
   { id: 'hold',      icon: 'hold',      label: 'Hold' },
 ];
 
-function getRadialItems(wpIdx: number): RadialMenuItem[] {
-  return wpIdx < 0 ? OP_RADIAL_ITEMS : NODE_RADIAL_ITEMS;
+function getRadialItems(wpIdx: number, state?: GameState): RadialMenuItem[] {
+  if (wpIdx < 0) return OP_RADIAL_ITEMS;
+  // Check if this waypoint has door actions or is near doors
+  if (state && state.radialMenu) {
+    const op = state.operators.find(o => o.id === state.radialMenu!.opId);
+    if (op && wpIdx < op.path.waypoints.length) {
+      const wp = op.path.waypoints[wpIdx];
+      // Check if near any door
+      let nearDoor = false;
+      const DOOR_RANGE = 80; // 2x door width
+      for (const w of state.room.walls) {
+        const dx = w.b.x - w.a.x, dy = w.b.y - w.a.y;
+        for (const d of w.doors) {
+          const doorX = w.a.x + dx * d.pos, doorY = w.a.y + dy * d.pos;
+          if (Math.sqrt((wp.position.x - doorX) ** 2 + (wp.position.y - doorY) ** 2) < DOOR_RANGE) nearDoor = true;
+        }
+      }
+      if (nearDoor) {
+        const hasDoorAction = wp.openDoors && wp.openDoors.length > 0;
+        return [...NODE_RADIAL_ITEMS, { id: 'door', icon: 'door' as const, label: hasDoorAction ? 'Cancel Door' : 'Open Door' }];
+      }
+    }
+  }
+  return NODE_RADIAL_ITEMS;
 }
 
 function getRadialIconPos(center: Vec2, idx: number, total: number): Vec2 {
@@ -735,13 +757,19 @@ function drawRadialIcon(ctx: CanvasRenderingContext2D, cx: number, cy: number, i
     // Pause bars
     ctx.fillRect(-3, -3, 2, 6);
     ctx.fillRect(1, -3, 2, 6);
+  } else if (icon === 'door') {
+    // Door icon - rectangle with handle
+    ctx.strokeRect(-4, -5, 8, 10);
+    ctx.beginPath();
+    ctx.arc(2, 0, 1.2, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   ctx.restore();
 }
 
 function drawRadialMenu(ctx: CanvasRenderingContext2D, menu: RadialMenu, state: GameState) {
-  const items = getRadialItems(menu.wpIdx);
+  const items = getRadialItems(menu.wpIdx, state);
   const t = Math.min(1, menu.animT);
   const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
 

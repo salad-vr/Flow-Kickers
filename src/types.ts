@@ -32,6 +32,8 @@ export interface Room {
   floors: FloorLayer[];
 }
 
+/** Reference to a specific door on a specific wall */
+export interface DoorRef { wallIdx: number; doorIdx: number; }
 export interface Waypoint {
   position: Vec2;
   facingOverride: number | null;
@@ -41,6 +43,8 @@ export interface Waypoint {
   tempo: number;
   /** Which floor level this waypoint is on (0 = ground) */
   floorLevel: number;
+  /** Doors to open when the operator reaches this waypoint */
+  openDoors: DoorRef[];
 }
 export type GoCode = 'A' | 'B' | 'C';
 export interface WaypointPath { waypoints: Waypoint[]; splineLUT: SplineLUT | null; color: string; }
@@ -115,7 +119,7 @@ export interface PendingNode {
 
 export interface RadialMenuItem {
   id: string;
-  icon: 'direction' | 'pie' | 'route' | 'speed' | 'delete' | 'hold' | 'clear';
+  icon: 'direction' | 'pie' | 'route' | 'speed' | 'delete' | 'hold' | 'clear' | 'door';
   label: string;
 }
 
@@ -182,7 +186,7 @@ export interface GameState {
 }
 
 export function makeWaypoint(pos: Vec2, floorLevel = 0): Waypoint {
-  return { position: { x: pos.x, y: pos.y }, facingOverride: null, lookTarget: null, hold: false, goCode: null, tempo: 1, floorLevel };
+  return { position: { x: pos.x, y: pos.y }, facingOverride: null, lookTarget: null, hold: false, goCode: null, tempo: 1, floorLevel, openDoors: [] };
 }
 
 export const C = {

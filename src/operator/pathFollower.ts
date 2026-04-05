@@ -22,6 +22,19 @@ export function updatePathFollowing(op: Operator, dt: number, state: GameState):
     return false;
   }
 
+  // Check first waypoint door opens (only once at start)
+  if (op.currentWaypointIndex === 0 && op.distanceTraveled < 1 && !op.isHolding) {
+    const firstWp = op.path.waypoints[0];
+    if (firstWp?.openDoors && firstWp.openDoors.length > 0) {
+      for (const dr of firstWp.openDoors) {
+        const wall = state.room.walls[dr.wallIdx];
+        if (wall && wall.doors[dr.doorIdx]) {
+          wall.doors[dr.doorIdx].open = true;
+        }
+      }
+    }
+  }
+
   if (op.isHolding) {
     const wp = op.path.waypoints[op.currentWaypointIndex];
     if (wp?.hold) {
@@ -61,6 +74,16 @@ export function updatePathFollowing(op: Operator, dt: number, state: GameState):
     op.reachedEnd = true;
     op.isMoving = false;
     op.position = getPointAtDistance(lut, lut.totalLength);
+    // Open doors at final waypoint
+    const lastWp = op.path.waypoints[op.path.waypoints.length - 1];
+    if (lastWp?.openDoors && lastWp.openDoors.length > 0) {
+      for (const dr of lastWp.openDoors) {
+        const wall = state.room.walls[dr.wallIdx];
+        if (wall && wall.doors[dr.doorIdx]) {
+          wall.doors[dr.doorIdx].open = true;
+        }
+      }
+    }
     // Snap to exact target angle (not lerp) so stage transitions capture the correct facing
     const last = op.path.waypoints[op.path.waypoints.length - 1];
     if (last?.facingOverride !== null) op.angle = last.facingOverride!;
@@ -83,6 +106,15 @@ export function updatePathFollowing(op: Operator, dt: number, state: GameState):
         const wp = op.path.waypoints[ni];
         if (wp && wp.floorLevel !== undefined && wp.floorLevel !== op.currentFloor) {
           op.currentFloor = wp.floorLevel;
+        }
+        // Open doors assigned to this waypoint
+        if (wp?.openDoors && wp.openDoors.length > 0) {
+          for (const dr of wp.openDoors) {
+            const wall = state.room.walls[dr.wallIdx];
+            if (wall && wall.doors[dr.doorIdx]) {
+              wall.doors[dr.doorIdx].open = true;
+            }
+          }
         }
         if (wp?.hold) { op.isHolding = true; op.distanceTraveled = wd; }
       }

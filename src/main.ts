@@ -789,7 +789,7 @@ function startSavedMapMission(mapData: SavedMap['data']) {
       fl.floor = cells;
     }
   }
-  for (const w of state.room.walls) for (const d of w.doors) d.open = true;
+  // Doors start closed - operators must open them via waypoint actions
   state.operators = [];
   state.selectedOpId = null;
   state.mode = 'planning';
@@ -1087,6 +1087,7 @@ function restoreSession(data: SerializedSession) {
         goCode: wp.goCode,
         tempo: wp.tempo,
         floorLevel: wp.floorLevel ?? 0,
+        openDoors: wp.openDoors || [],
       }));
       if (op.path.waypoints.length >= 2) {
         rebuildPathLUT(op);
@@ -1654,7 +1655,7 @@ function startMission() {
   state.room = (ROOM_TEMPLATES as Record<string, () => Room>)[selRoom]();
   state.room.floor = computeFloorCells(state.room.walls);
   if (!state.room.floors) state.room.floors = [];
-  for (const w of state.room.walls) for (const d of w.doors) d.open = true;
+  // Doors start closed - operators must open them via waypoint actions
   state.operators = [];
   state.selectedOpId = null;
   state.mode = 'planning';
@@ -2271,8 +2272,40 @@ const NODE_RADIAL_ITEMS: RadialMenuItem[] = [
   { id: 'hold',      icon: 'hold',      label: 'Hold' },
 ];
 
-function getRadialItems(wpIdx: number): RadialMenuItem[] {
-  return wpIdx < 0 ? OP_RADIAL_ITEMS : NODE_RADIAL_ITEMS;
+function getRadialItems(wpIdx: number, opId?: number): RadialMenuItem[] {
+  if (wpIdx < 0) return OP_RADIAL_ITEMS;
+  // Check if this waypoint is near any closed door
+  const op = state.operators.find(o => o.id === opId);
+  if (op && wpIdx < op.path.waypoints.length) {
+    const wp = op.path.waypoints[wpIdx];
+    const nearDoors = findDoorsNear(wp.position, DOOR_W * 2);
+    if (nearDoors.length > 0) {
+      const hasDoorAction = wp.openDoors && wp.openDoors.length > 0;
+      return [
+        ...NODE_RADIAL_ITEMS,
+        { id: 'door', icon: 'door', label: hasDoorAction ? 'Cancel Door' : 'Open Door' },
+      ];
+    }
+  }
+  return NODE_RADIAL_ITEMS;
+}
+
+/** Find all doors within radius of a world position */
+function findDoorsNear(pos: { x: number; y: number }, radius: number): { wallIdx: number; doorIdx: number; dist: number }[] {
+  const results: { wallIdx: number; doorIdx: number; dist: number }[] = [];
+  for (let wi = 0; wi < state.room.walls.length; wi++) {
+    const w = state.room.walls[wi];
+    const dx = w.b.x - w.a.x, dy = w.b.y - w.a.y;
+    for (let di = 0; di < w.doors.length; di++) {
+      const d = w.doors[di];
+      const doorX = w.a.x + dx * d.pos;
+      const doorY = w.a.y + dy * d.pos;
+      const dist = Math.sqrt((pos.x - doorX) ** 2 + (pos.y - doorY) ** 2);
+      if (dist < radius) results.push({ wallIdx: wi, doorIdx: di, dist });
+    }
+  }
+  results.sort((a, b) => a.dist - b.dist);
+  return results;
 }
 
 /** Get world-space position of a radial menu icon */
@@ -2283,7 +2316,7 @@ function getRadialIconPos(center: Vec2, idx: number, total: number): Vec2 {
 
 /** Hit-test radial menu icons in world-space, return index or -1 */
 function hitTestRadialMenu(worldMouse: Vec2, menu: RadialMenu): number {
-  const items = getRadialItems(menu.wpIdx);
+  const items = getRadialItems(menu.wpIdx, menu.opId);
   for (let i = 0; i < items.length; i++) {
     const p = getRadialIconPos(menu.center, i, items.length);
     if (distance(worldMouse, p) < RADIAL_ICON_R + 2) return i;
@@ -2526,7 +2559,7 @@ function handleInput() {
     if (menu.animT < 1) menu.animT = Math.min(1, menu.animT + 0.15);
 
     if (input.justPressed) {
-      const items = getRadialItems(menu.wpIdx);
+      const items = getRadialItems(menu.wpIdx, menu.opId);
       if (menu.hoveredIdx >= 0) {
         sfxSelect();
         const item = items[menu.hoveredIdx];
@@ -2577,6 +2610,15 @@ function handleInput() {
             } else if (item.id === 'hold') {
               wp.hold = !wp.hold;
               if (wp.hold && !wp.goCode) wp.goCode = 'A';
+            } else if (item.id === 'door') {
+              if (wp.openDoors && wp.openDoors.length > 0) {
+                // Cancel door action
+                wp.openDoors = [];
+              } else {
+                // Assign nearest doors to this waypoint
+                const nearDoors = findDoorsNear(wp.position, DOOR_W * 2);
+                wp.openDoors = nearDoors.map(nd => ({ wallIdx: nd.wallIdx, doorIdx: nd.doorIdx }));
+              }
             }
           }
         }

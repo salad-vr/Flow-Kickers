@@ -35,7 +35,7 @@ export function resetSimulation(state: GameState) {
       for (const t of fl.threats) { t.neutralized = false; t.neutralizeTimer = 0; }
     }
   }
-  for (const w of state.room.walls) for (const d of w.doors) d.open = true;
+  // Doors start closed - operators open them via waypoint actions
 }
 
 export function triggerGoCode(state: GameState, code: GoCode) { state.goCodesTriggered[code] = true; }
