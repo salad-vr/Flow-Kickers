@@ -183,6 +183,8 @@ export interface GameState {
   viewingStageIndex: number;
   /** Currently viewed/active floor level in game mode (0 = ground) */
   activeFloor: number;
+  /** Multiplayer state (null = single player) */
+  multiplayer: import('./network/types').MultiplayerState | null;
 }
 
 export function makeWaypoint(pos: Vec2, floorLevel = 0): Waypoint {

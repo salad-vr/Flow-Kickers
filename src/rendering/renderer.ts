@@ -215,9 +215,20 @@ export function renderGame(canvas: HTMLCanvasElement, state: GameState) {
       drawOp(ctx, op, false, true, false, isExec);
       ctx.restore();
     } else {
-      const grey = sid !== null && op.id !== sid;
       const isDragging = op.id === deployingOpId;
-      drawOp(ctx, op, op.id === sid || isDragging, grey, isDragging, isExec);
+      // In multiplayer, grey out operators owned by other players
+      const isOtherPlayerOp = state.multiplayer && (() => {
+        const owner = state.multiplayer!.operatorOwnership[op.id];
+        return owner !== undefined && owner !== state.multiplayer!.localPlayerId;
+      })();
+      const grey = isOtherPlayerOp ? true : (sid !== null && op.id !== sid);
+      if (isOtherPlayerOp) {
+        ctx.save(); ctx.globalAlpha = 0.45;
+        drawOp(ctx, op, false, true, false, isExec);
+        ctx.restore();
+      } else {
+        drawOp(ctx, op, op.id === sid || isDragging, grey, isDragging, isExec);
+      }
     }
   }
 
@@ -1056,8 +1067,20 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
   ctx.fillStyle = 'rgba(30,51,82,0.6)';
   ctx.fillRect(rightBlockX + 106, by + 4, 1, btnH - 8);
 
-  // GO / PAUSE / RESUME - primary action, visually distinct
-  if (mode === 'planning') {
+  // GO / PAUSE / RESUME / READY - primary action, visually distinct
+  if (mode === 'planning' && state.multiplayer) {
+    // Multiplayer: show READY/UNREADY
+    const mp = state.multiplayer;
+    const isReady = mp.readyPlayers.includes(mp.localPlayerId);
+    const readyCount = mp.readyPlayers.length;
+    const totalPlayers = mp.players.filter(p => p.connected).length;
+    const label = isReady ? `READY ${readyCount}/${totalPlayers}` : `READY?`;
+    if (isReady) {
+      drawHudBtn(ctx, rightBlockX + 113, by, 68, btnH, label, '#55aa66', hov === 'go', 'go');
+    } else {
+      drawHudBtnPrimary(ctx, rightBlockX + 113, by - 1, 68, btnH + 2, label, hov === 'go');
+    }
+  } else if (mode === 'planning') {
     drawHudBtnPrimary(ctx, rightBlockX + 113, by - 1, 68, btnH + 2, 'GO!', hov === 'go');
   } else if (mode === 'executing') {
     drawHudBtn(ctx, rightBlockX + 113, by, 68, btnH, 'PAUSE', C.hudText, hov === 'go', 'go');
@@ -1091,6 +1114,52 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
 
   // ---- Top-left: Logo ----
   drawLogo(ctx);
+
+  // ---- Multiplayer indicators ----
+  if (state.multiplayer) {
+    const mp = state.multiplayer;
+    const playerColors = ['#5588cc', '#cc7744', '#55aa66', '#aa55aa'];
+    // Player color dots (top-left, below logo)
+    const dotY = 55;
+    for (let i = 0; i < mp.players.length; i++) {
+      const p = mp.players[i];
+      const dotX = 14 + i * 22;
+      ctx.globalAlpha = p.connected ? 0.9 : 0.3;
+      ctx.fillStyle = playerColors[p.colorIndex] || '#888';
+      ctx.beginPath(); ctx.arc(dotX, dotY, 6, 0, Math.PI * 2); ctx.fill();
+      // Ready checkmark
+      if (mp.readyPlayers.includes(p.id)) {
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(dotX - 3, dotY); ctx.lineTo(dotX - 1, dotY + 2); ctx.lineTo(dotX + 3, dotY - 2); ctx.stroke();
+      }
+      ctx.globalAlpha = p.connected ? 0.5 : 0.2;
+      ctx.fillStyle = '#e8dfc6';
+      ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(p.name.substring(0, 6), dotX, dotY + 9);
+    }
+    ctx.globalAlpha = 1;
+
+    // Notifications (top center, fading)
+    const now = Date.now();
+    for (let i = 0; i < mp.notifications.length; i++) {
+      const n = mp.notifications[i];
+      const age = now - n.time;
+      if (age > 5000) continue;
+      const alpha = age < 4000 ? 0.85 : 0.85 * (1 - (age - 4000) / 1000);
+      const ny = 14 + i * 22;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = 'rgba(12,21,37,0.85)';
+      ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+      const tw2 = ctx.measureText(n.text).width;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(W / 2 - tw2 / 2 - 12, ny - 2, tw2 + 24, 18, 4);
+      ctx.fill();
+      ctx.fillStyle = '#e8dfc6';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(n.text, W / 2, ny + 7);
+    }
+    ctx.globalAlpha = 1;
+  }
 }
 
 /** Primary action button (GO / RESUME) - visually prominent */

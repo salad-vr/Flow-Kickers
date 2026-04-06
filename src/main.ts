@@ -17,6 +17,41 @@ import { encodeRoomCode, decodeRoomCode } from './room/roomCode';
 import { initMusic, toggleMute, isMuted } from './audio/musicPlayer';
 import { sfxClick, sfxSelect, sfxConfirm, sfxBack, sfxTick, sfxDelete } from './audio/sfx';
 
+// ---- Extracted game modules (for multiplayer reuse) ----
+import {
+  doGo as _doGo, doReset as _doReset, doReplay as _doReplay,
+  doClearLevel as _doClearLevel, saveStage as _saveStage,
+  editStage as _editStage, deleteSelected as _deleteSelected,
+  checkStageCompletion as _checkStageCompletion,
+  loadAndExecuteStage as _loadAndExecuteStage,
+  resetAllThreats as _resetAllThreats, clearUIOverlays,
+} from './game/actions';
+import {
+  openSharePanel as _openSharePanel, closeSharePanel as _closeSharePanel,
+  copyRoomCode as _copyRoomCode, doExportGif as _doExportGif,
+  downloadShareGif as _downloadShareGif,
+} from './game/hudActions';
+import {
+  handleInput as _handleGameInput, handleGameKeydown,
+  saveConfirmTimer as _saveConfirmTimerRef, tickSaveConfirmTimer,
+  showSaveConfirmation as _showSaveConfirmation,
+} from './game/gameInput';
+import { computeFloorCells } from './game/helpers';
+import { bakePieDirection } from './game/radialMenu';
+import {
+  serializeSession, restoreSession as restoreSessionData,
+  restoreWalls, restoreObjects, roomFromSavedMap,
+  saveSessionToStorage, clearSessionStorage, loadSessionFromStorage,
+  loadSavedMaps, saveMapsToStorage, deleteSavedMap as _deleteSavedMap,
+  saveImportedMap, loadInProgressSessions, saveInProgressToStorage,
+  deleteInProgressSession as _deleteInProgressSession,
+  saveProgress as _saveProgress, saveCurrentMap as _saveCurrentMap,
+  type SavedMap, type SerializedSession, type SavedSession,
+} from './game/persistence';
+import { NetworkSync } from './network/sync';
+import { PLAYER_COLORS } from './network/types';
+import { setNetSync } from './network/index';
+
 // ---- HTML ----
 const app = document.getElementById('app')!;
 app.innerHTML = `
@@ -39,6 +74,19 @@ app.innerHTML = `
     </div>
 
     <button id="btn-start" class="menu-start-btn">START MISSION</button>
+
+    <div class="menu-section" style="margin-top:12px;">
+      <label class="menu-label">Multiplayer</label>
+      <div class="menu-footer-row" style="gap:8px;">
+        <button id="btn-mp-host" class="menu-link-btn" style="flex:1;">Host Game</button>
+        <button id="btn-mp-join" class="menu-link-btn" style="flex:1;">Join Game</button>
+      </div>
+      <div id="mp-join-row" class="menu-code-row" style="display:none;margin-top:6px;">
+        <input id="mp-join-input" class="menu-code-input" type="text" placeholder="Enter room code (e.g. FKAB12)" spellcheck="false" autocomplete="off" maxlength="6" style="text-transform:uppercase;" />
+        <button id="btn-mp-join-go" class="menu-code-btn">JOIN</button>
+      </div>
+      <p id="mp-error" class="menu-code-error"></p>
+    </div>
 
     <div id="in-progress-section" class="menu-section" style="display:none">
       <label class="menu-label">In Progress</label>
@@ -429,6 +477,29 @@ app.innerHTML = `
   </div>
 </div>
 
+<div id="lobby-screen" style="display:none">
+  <div class="menu-content" style="max-width:400px;">
+    <h2 class="menu-title" style="font-size:1.2em;margin-bottom:8px;">
+      <span class="menu-title-flow">Multiplayer</span>
+      <span class="menu-title-kickers">Lobby</span>
+    </h2>
+    <div class="menu-section">
+      <label class="menu-label">Room Code</label>
+      <div id="lobby-room-code" style="font-family:var(--mono);font-size:1.8em;letter-spacing:0.15em;color:var(--cream);text-align:center;padding:8px 0;user-select:all;cursor:pointer;" title="Click to copy">----</div>
+      <p style="text-align:center;font-size:0.7em;color:var(--muted);margin-top:2px;">Share this code with friends</p>
+    </div>
+    <div class="menu-section">
+      <label class="menu-label">Players</label>
+      <div id="lobby-players" style="display:flex;flex-direction:column;gap:6px;"></div>
+    </div>
+    <div id="lobby-status" style="text-align:center;font-size:0.75em;color:var(--muted);margin:8px 0;">Waiting for players...</div>
+    <button id="btn-lobby-start" class="menu-start-btn" style="display:none;">START MISSION</button>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button id="btn-lobby-leave" class="menu-link-btn" style="flex:1;justify-content:center;">Leave Lobby</button>
+    </div>
+  </div>
+</div>
+
 <div id="save-modal" class="save-modal-overlay" style="display:none">
   <div class="save-modal">
     <h3 class="save-modal-title">Save Map</h3>
@@ -493,6 +564,140 @@ function sizeBuildCanvas() {
 sizeBuildCanvas();
 window.addEventListener('resize', () => { sizeCanvas(); sizeBuildCanvas(); });
 
+// ---- Multiplayer ----
+let netSync: NetworkSync | null = null;
+
+function refreshLobbyUI() {
+  const mp = state.multiplayer;
+  if (!mp) return;
+
+  // Room code
+  const codeEl = document.getElementById('lobby-room-code');
+  if (codeEl) {
+    codeEl.textContent = mp.roomCode;
+    codeEl.onclick = () => {
+      navigator.clipboard.writeText(mp.roomCode).catch(() => {});
+      codeEl.textContent = 'COPIED!';
+      setTimeout(() => { codeEl.textContent = mp.roomCode; }, 1500);
+    };
+  }
+
+  // Players list
+  const playersEl = document.getElementById('lobby-players');
+  if (playersEl) {
+    playersEl.innerHTML = '';
+    for (const p of mp.players) {
+      const div = document.createElement('div');
+      div.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,255,255,0.04);border-radius:6px;border-left:3px solid ${PLAYER_COLORS[p.colorIndex]};`;
+      div.innerHTML = `
+        <span style="font-weight:bold;color:${PLAYER_COLORS[p.colorIndex]};">${p.name}</span>
+        ${p.id === mp.localPlayerId ? '<span style="font-size:0.7em;color:var(--muted);">(you)</span>' : ''}
+        ${!p.connected ? '<span style="font-size:0.7em;color:#cc4433;">(disconnected)</span>' : ''}
+      `;
+      playersEl.appendChild(div);
+    }
+    // Empty slots
+    for (let i = mp.players.length; i < 4; i++) {
+      const div = document.createElement('div');
+      div.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,255,255,0.02);border-radius:6px;border-left:3px solid rgba(255,255,255,0.1);opacity:0.4;`;
+      div.innerHTML = `<span style="color:var(--muted);font-style:italic;">Waiting for player...</span>`;
+      playersEl.appendChild(div);
+    }
+  }
+
+  // Status text
+  const statusEl = document.getElementById('lobby-status');
+  if (statusEl) {
+    const connected = mp.players.filter(p => p.connected).length;
+    if (mp.status === 'connecting') statusEl.textContent = 'Connecting...';
+    else if (mp.status === 'error') statusEl.textContent = mp.errorMessage || 'Error';
+    else statusEl.textContent = `${connected}/4 players connected`;
+    statusEl.style.color = mp.status === 'error' ? '#cc4433' : '';
+  }
+
+  // Start button (host only, 2+ players)
+  const startBtn = document.getElementById('btn-lobby-start') as HTMLButtonElement;
+  if (startBtn) {
+    const connected = mp.players.filter(p => p.connected).length;
+    if (mp.isHost && connected >= 2) {
+      startBtn.style.display = '';
+      startBtn.textContent = `START MISSION (${connected} players)`;
+    } else {
+      startBtn.style.display = 'none';
+    }
+  }
+}
+
+// Multiplayer button handlers (wired after HTML is ready)
+document.getElementById('btn-mp-host')!.onclick = async () => {
+  sfxClick();
+  const nameInput = prompt('Enter your name:', 'Player 1');
+  if (!nameInput) return;
+  const errorEl = document.getElementById('mp-error')!;
+  errorEl.textContent = '';
+
+  try {
+    netSync = new NetworkSync(state, nameInput, refreshLobbyUI, () => show('game'));
+    setNetSync(netSync);
+    const code = await netSync.hostRoom();
+    show('lobby');
+  } catch (err: any) {
+    errorEl.textContent = err.message || 'Failed to host';
+  }
+};
+
+document.getElementById('btn-mp-join')!.onclick = () => {
+  sfxClick();
+  const row = document.getElementById('mp-join-row')!;
+  row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+};
+
+document.getElementById('btn-mp-join-go')!.onclick = async () => {
+  sfxConfirm();
+  const codeInput = (document.getElementById('mp-join-input') as HTMLInputElement).value.trim().toUpperCase();
+  const errorEl = document.getElementById('mp-error')!;
+  errorEl.textContent = '';
+
+  if (!codeInput || codeInput.length < 4) { errorEl.textContent = 'Enter a valid room code'; return; }
+
+  const nameInput = prompt('Enter your name:', 'Player');
+  if (!nameInput) return;
+
+  try {
+    netSync = new NetworkSync(state, nameInput, refreshLobbyUI, () => show('game'));
+    setNetSync(netSync);
+    await netSync.joinRoom(codeInput);
+    show('lobby');
+  } catch (err: any) {
+    errorEl.textContent = err.message || 'Failed to join';
+    if (netSync) { netSync.disconnect(); netSync = null; setNetSync(null); }
+  }
+};
+
+document.getElementById('mp-join-input')!.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('btn-mp-join-go')!.click();
+});
+
+document.getElementById('btn-lobby-start')!.onclick = () => {
+  sfxConfirm();
+  if (!netSync) return;
+  startMission();
+  netSync.startGame(selRoom, selOpCount);
+};
+
+document.getElementById('btn-lobby-leave')!.onclick = () => {
+  sfxBack();
+  if (netSync) { netSync.disconnect(); netSync = null; }
+  show('menu');
+};
+
+document.getElementById('lobby-room-code')!.onclick = () => {
+  const mp = state.multiplayer;
+  if (mp) {
+    navigator.clipboard.writeText(mp.roomCode).catch(() => {});
+  }
+};
+
 // ---- State ----
 let selRoom: RoomTemplateName = 'Corner Fed';
 let selOpCount = 7;
@@ -520,6 +725,7 @@ const state: GameState = {
   preGoSnapshot: null,
   viewingStageIndex: -1,
   activeFloor: 0,
+  multiplayer: null,
 };
 
 // ---- Build state ----
@@ -632,141 +838,14 @@ function undoHistory() {
   refreshBuildFloorTabs();
 }
 
-// ---- Saved Maps (localStorage) ----
-interface SavedMap {
-  name: string;
-  data: {
-    w: any[][];
-    t: number[][];
-    e: number[][];
-    f?: number[][];
-    o?: any[];
-    fc?: any[];
-    floors?: any[];
-  };
-  createdAt: number;
-}
-
-const SAVED_MAPS_KEY = 'flowkickers_saved_maps';
-
-function loadSavedMaps(): SavedMap[] {
-  try {
-    const raw = localStorage.getItem(SAVED_MAPS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
-
-function saveMapsToStorage(maps: SavedMap[]) {
-  localStorage.setItem(SAVED_MAPS_KEY, JSON.stringify(maps));
-}
-
+// ---- Saved Maps (localStorage) - delegated to game/persistence.ts ----
 function saveCurrentMap(name: string) {
-  const maps = loadSavedMaps();
-  const mapData: SavedMap = {
-    name,
-    data: {
-      w: customRoom.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.doors.map(d => [d.pos, d.open ? 1 : 0])]),
-      t: customRoom.threats.map(t => [t.position.x, t.position.y]),
-      e: customRoom.entryPoints.map(e => [e.x, e.y]),
-      f: customRoom.floor.map(p => [p.x, p.y]),
-      o: customRoom.objects.map(o => {
-        const arr: any[] = [o.x, o.y, o.w, o.h, o.type];
-        if (o.connectsFloors) arr.push(o.connectsFloors);
-        return arr;
-      }),
-      fc: customRoom.floorCut.map(p => [p.x, p.y]),
-      floors: customRoom.floors.map(fl => ({
-        level: fl.level,
-        bounds: fl.bounds,
-        w: fl.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.doors.map(d => [d.pos, d.open ? 1 : 0])]),
-        t: fl.threats.map(t => [t.position.x, t.position.y]),
-        o: fl.objects.map(o => {
-          const arr: any[] = [o.x, o.y, o.w, o.h, o.type];
-          if (o.connectsFloors) arr.push(o.connectsFloors);
-          return arr;
-        }),
-        fc: fl.floorCut.map(p => [p.x, p.y]),
-      })),
-    },
-    createdAt: Date.now(),
-  };
-  maps.push(mapData);
-  saveMapsToStorage(maps);
-  refreshCustomMapsUI();
-}
-
-function saveImportedMap(mapData: SavedMap['data']) {
-  // Check if this exact map already exists (avoid duplicates)
-  const maps = loadSavedMaps();
-  const newJson = JSON.stringify(mapData.w);
-  const alreadyExists = maps.some(m => JSON.stringify(m.data.w) === newJson);
-  if (alreadyExists) return;
-
-  const wallCount = (mapData.w || []).length;
-  const threatCount = (mapData.t || []).length;
-  const name = `Imported (${wallCount}w ${threatCount}t)`;
-  const saved: SavedMap = {
-    name,
-    data: mapData,
-    createdAt: Date.now(),
-  };
-  maps.push(saved);
-  saveMapsToStorage(maps);
-  refreshCustomMapsUI();
+  _saveCurrentMap(name, customRoom, refreshCustomMapsUI);
 }
 
 function deleteSavedMap(index: number) {
-  const maps = loadSavedMaps();
-  maps.splice(index, 1);
-  saveMapsToStorage(maps);
+  _deleteSavedMap(index);
   refreshCustomMapsUI();
-}
-
-function restoreWalls(arr: any[]): import('./types').WallSegment[] {
-  return (arr || []).map((w: any[]) => {
-    const wall = makeWall(w[0], w[1], w[2], w[3]);
-    if (Array.isArray(w[4])) {
-      wall.doors = w[4].map((d: any) => ({ pos: d[0], open: d[1] === 1 }));
-    } else if (w[4] > 0) {
-      wall.doors = [{ pos: w[5] ?? 0.5, open: w[4] === 1 }];
-    }
-    return wall;
-  });
-}
-
-function restoreObjects(arr: any[]): import('./types').RoomObject[] {
-  return (arr || []).map((o: any) => {
-    const obj: import('./types').RoomObject = {
-      x: o[0] ?? o.x, y: o[1] ?? o.y, w: o[2] ?? o.w, h: o[3] ?? o.h,
-      type: o[4] ?? o.type ?? 'block',
-    };
-    // Restore connectsFloors (could be at index 5 in array format, or as a property)
-    if (Array.isArray(o[5])) obj.connectsFloors = [o[5][0], o[5][1]];
-    else if (o.connectsFloors) obj.connectsFloors = o.connectsFloors;
-    return obj;
-  });
-}
-
-function roomFromSavedMap(mapData: SavedMap['data']): Room {
-  return {
-    name: 'Custom',
-    walls: restoreWalls(mapData.w),
-    threats: (mapData.t || []).map((t: number[]) => makeThreat(t[0], t[1])),
-    entryPoints: (mapData.e || []).map((e: number[]) => ({ x: e[0], y: e[1] })),
-    floor: (mapData.f || []).map((p: number[]) => ({ x: p[0], y: p[1] })),
-    objects: restoreObjects(mapData.o || []),
-    floorCut: (mapData.fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
-    labels: ((mapData as any).lb || []).map((l: any) => ({ position: { x: l.position?.x ?? l[0], y: l.position?.y ?? l[1] }, text: l.text ?? l[2] ?? '' })),
-    floors: (mapData.floors || []).map((fl: any) => ({
-      level: fl.level,
-      bounds: fl.bounds || { x: 0, y: 0, w: 0, h: 0 },
-      walls: restoreWalls(fl.w || []),
-      threats: (fl.t || []).map((t: number[]) => makeThreat(t[0], t[1])),
-      objects: restoreObjects(fl.o || []),
-      floor: [],  // recomputed on load
-      floorCut: (fl.fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
-    })),
-  };
 }
 
 function startSavedMapMission(mapData: SavedMap['data']) {
@@ -900,315 +979,27 @@ document.getElementById('save-name-input')!.addEventListener('keydown', (e) => {
 // Initialize custom maps UI on load
 refreshCustomMapsUI();
 
-// ---- Session Persistence (refresh protection + save progress) ----
-const SESSION_KEY = 'flowkickers_active_session';
-const IN_PROGRESS_KEY = 'flowkickers_in_progress';
-
-interface SerializedSession {
-  room: {
-    name: string;
-    w: any[][];
-    t: number[][];
-    e: number[][];
-    f: number[][];
-    o?: any[];
-    fc?: any[];
-    floors?: any[];
-  };
-  operators: {
-    id: number;
-    position: { x: number; y: number };
-    angle: number;
-    color: string;
-    label: string;
-    deployed: boolean;
-    startPosition: { x: number; y: number };
-    startAngle: number;
-    tempo: number;
-    pieTarget: { x: number; y: number } | null;
-    waypoints: any[];
-  }[];
-  stages: any[];
-  currentStageIndex: number;
-  camera: { x: number; y: number; zoom: number };
-  goCodesTriggered: Record<string, boolean>;
-  roomCleared: boolean;
-  selRoom: string;
-  selOpCount: number;
-}
-
-interface SavedSession {
-  name: string;
-  data: SerializedSession;
-  savedAt: number;
-}
-
-function serializeSession(): SerializedSession {
-  return {
-    room: {
-      name: state.room.name,
-      w: state.room.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.doors.map(d => [d.pos, d.open ? 1 : 0])]),
-      t: state.room.threats.map(t => [t.position.x, t.position.y, t.neutralized ? 1 : 0]),
-      e: state.room.entryPoints.map(e => [e.x, e.y]),
-      f: state.room.floor.map(p => [p.x, p.y]),
-      o: state.room.objects.map(o => {
-        const arr: any[] = [o.x, o.y, o.w, o.h, o.type];
-        if (o.connectsFloors) arr.push(o.connectsFloors);
-        return arr;
-      }),
-      fc: state.room.floorCut.map(p => [p.x, p.y]),
-      floors: (state.room.floors || []).map(fl => ({
-        level: fl.level,
-        bounds: fl.bounds,
-        w: fl.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, w.doors.map(d => [d.pos, d.open ? 1 : 0])]),
-        t: fl.threats.map(t => [t.position.x, t.position.y, t.neutralized ? 1 : 0]),
-        o: fl.objects.map(o => {
-          const arr: any[] = [o.x, o.y, o.w, o.h, o.type];
-          if (o.connectsFloors) arr.push(o.connectsFloors);
-          return arr;
-        }),
-        fc: fl.floorCut.map(p => [p.x, p.y]),
-      })),
-    },
-    operators: state.operators.map(op => ({
-      id: op.id,
-      position: { x: op.position.x, y: op.position.y },
-      angle: op.angle,
-      color: op.color,
-      label: op.label,
-      deployed: op.deployed,
-      startPosition: { x: op.startPosition.x, y: op.startPosition.y },
-      startAngle: op.startAngle,
-      tempo: op.tempo,
-      pieTarget: op.pieTarget ? { x: op.pieTarget.x, y: op.pieTarget.y } : null,
-      waypoints: op.path.waypoints.map(wp => ({
-        position: { x: wp.position.x, y: wp.position.y },
-        facingOverride: wp.facingOverride,
-        lookTarget: wp.lookTarget ? { x: wp.lookTarget.x, y: wp.lookTarget.y } : null,
-        hold: wp.hold,
-        goCode: wp.goCode,
-        tempo: wp.tempo,
-      })),
-    })),
-    stages: state.stages.map(s => ({
-      operatorStates: s.operatorStates.map(os => ({
-        opId: os.opId,
-        startPosition: { x: os.startPosition.x, y: os.startPosition.y },
-        startAngle: os.startAngle,
-        waypoints: os.waypoints.map(wp => ({
-          position: { x: wp.position.x, y: wp.position.y },
-          facingOverride: wp.facingOverride,
-          lookTarget: wp.lookTarget ? { x: wp.lookTarget.x, y: wp.lookTarget.y } : null,
-          hold: wp.hold,
-          goCode: wp.goCode,
-          tempo: wp.tempo,
-        })),
-        tempo: os.tempo,
-        pieTarget: os.pieTarget ? { x: os.pieTarget.x, y: os.pieTarget.y } : null,
-      })),
-    })),
-    currentStageIndex: state.currentStageIndex,
-    camera: { x: state.camera.x, y: state.camera.y, zoom: state.camera.zoom },
-    goCodesTriggered: { ...state.goCodesTriggered },
-    roomCleared: state.roomCleared,
-    selRoom,
-    selOpCount,
-  };
-}
+// ---- Session Persistence (delegated to game/persistence.ts) ----
 
 function restoreSession(data: SerializedSession) {
-  // Restore room
-  const room: Room = {
-    name: data.room.name,
-    walls: restoreWalls(data.room.w || []),
-    threats: (data.room.t || []).map((t: number[]) => {
-      const threat = makeThreat(t[0], t[1]);
-      if (t[2] === 1) { threat.neutralized = true; threat.neutralizeTimer = 1; }
-      return threat;
-    }),
-    entryPoints: (data.room.e || []).map((e: number[]) => ({ x: e[0], y: e[1] })),
-    floor: (data.room.f || []).map((p: number[]) => ({ x: p[0], y: p[1] })),
-    objects: restoreObjects((data.room as any).o || []),
-    floorCut: ((data.room as any).fc || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
-    labels: ((data.room as any).lb || []).map((l: any) => ({ position: { x: l.position?.x ?? l[0], y: l.position?.y ?? l[1] }, text: l.text ?? l[2] ?? '' })),
-    floors: ((data.room as any).floors || []).map((fl: any) => ({
-      level: fl.level,
-      bounds: fl.bounds || { x: 0, y: 0, w: 0, h: 0 },
-      walls: restoreWalls(fl.w || fl.walls || []),
-      threats: (fl.t || fl.threats || []).map((t: any) => {
-        if (Array.isArray(t)) return makeThreat(t[0], t[1]);
-        return makeThreat(t.position.x, t.position.y);
-      }),
-      objects: restoreObjects(fl.o || fl.objects || []),
-      floor: fl.floor || [],
-      floorCut: (fl.fc || fl.floorCut || []).map((p: any) => ({ x: p[0] ?? p.x, y: p[1] ?? p.y })),
-    })),
-  };
-  state.room = room;
-
-  // Restore operators
-  resetOperatorId();
-  let maxOpId = 0;
-  state.operators = data.operators.map((od, i) => {
-    if (od.id > maxOpId) maxOpId = od.id;
-    const color = od.color || C.opColors[i % C.opColors.length];
-    const emptyPath: import('./types').WaypointPath = { waypoints: [], splineLUT: null, color };
-    const op: Operator = {
-      id: od.id,
-      position: { x: od.position.x, y: od.position.y },
-      angle: od.angle,
-      speed: OP_SPEED,
-      fovAngle: FOV_ANG,
-      fovRange: FOV_DIST,
-      color,
-      label: od.label,
-      path: emptyPath,
-      tempo: od.tempo,
-      deployed: od.deployed,
-      distanceTraveled: 0,
-      currentWaypointIndex: 0,
-      isHolding: false,
-      isMoving: false,
-      reachedEnd: false,
-      startPosition: { x: od.startPosition.x, y: od.startPosition.y },
-      startAngle: od.startAngle,
-      pieTarget: od.pieTarget ? { x: od.pieTarget.x, y: od.pieTarget.y } : null,
-      smoothPosition: { x: od.position.x, y: od.position.y },
-      currentFloor: (od as any).currentFloor ?? 0,
-      startFloor: (od as any).startFloor ?? 0,
-    };
-    // Restore waypoints
-    if (od.waypoints && od.waypoints.length > 0) {
-      op.path.waypoints = od.waypoints.map((wp: any) => ({
-        position: { x: wp.position.x, y: wp.position.y },
-        facingOverride: wp.facingOverride,
-        lookTarget: wp.lookTarget ? { x: wp.lookTarget.x, y: wp.lookTarget.y } : null,
-        hold: wp.hold,
-        goCode: wp.goCode,
-        tempo: wp.tempo,
-        floorLevel: wp.floorLevel ?? 0,
-        openDoors: wp.openDoors || [],
-      }));
-      if (op.path.waypoints.length >= 2) {
-        rebuildPathLUT(op);
-      }
-    }
-    return op;
-  });
-  setOperatorNextId(maxOpId + 1);
-
-  // Restore stages
-  state.stages = (data.stages || []).map((s: any) => ({
-    operatorStates: s.operatorStates.map((os: any) => ({
-      opId: os.opId,
-      startPosition: { x: os.startPosition.x, y: os.startPosition.y },
-      startAngle: os.startAngle,
-      waypoints: os.waypoints.map((wp: any) => ({
-        position: { x: wp.position.x, y: wp.position.y },
-        facingOverride: wp.facingOverride,
-        lookTarget: wp.lookTarget ? { x: wp.lookTarget.x, y: wp.lookTarget.y } : null,
-        hold: wp.hold,
-        goCode: wp.goCode,
-        tempo: wp.tempo,
-        floorLevel: wp.floorLevel ?? 0,
-      })),
-      tempo: os.tempo,
-      pieTarget: os.pieTarget ? { x: os.pieTarget.x, y: os.pieTarget.y } : null,
-      startFloor: os.startFloor ?? 0,
-    })),
-  }));
-  state.currentStageIndex = data.currentStageIndex || 0;
-
-  // Restore camera
-  state.camera = { x: data.camera.x, y: data.camera.y, zoom: data.camera.zoom };
-
-  // Restore misc state
-  state.goCodesTriggered = { A: false, B: false, C: false, ...data.goCodesTriggered } as Record<import('./types').GoCode, boolean>;
-  state.roomCleared = data.roomCleared || false;
-  state.mode = 'planning';
-  state.elapsedTime = 0;
-  state.interaction = { type: 'idle' };
-  state.popup = null;
-  state.radialMenu = null;
-  state.pendingNode = null;
-  state.speedSlider = null;
-  state.selectedOpId = null;
-  state.executingStageIndex = -1;
-  state.isReplaying = false;
-  state.stageJustCompleted = false;
-  state.preGoSnapshot = null;
-  state.viewingStageIndex = -1;
-
-  // Restore selection state
-  selRoom = (data.selRoom || 'Corner Fed') as RoomTemplateName;
-  selOpCount = data.selOpCount || 7;
-}
-
-function saveSessionToStorage() {
-  if (state.screen !== 'game') return;
-  // Only save in planning or paused modes (not mid-execution)
-  if (state.mode === 'executing') return;
-  try {
-    const data = serializeSession();
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
-  } catch { /* ignore quota errors */ }
-}
-
-function clearSessionStorage() {
-  sessionStorage.removeItem(SESSION_KEY);
-}
-
-function loadSessionFromStorage(): SerializedSession | null {
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+  const result = restoreSessionData(state, data);
+  selRoom = result.selRoom as RoomTemplateName;
+  selOpCount = result.selOpCount;
 }
 
 // Auto-save session before page unload (refresh/close)
 window.addEventListener('beforeunload', () => {
-  saveSessionToStorage();
+  saveSessionToStorage(state, selRoom, selOpCount);
 });
-
-// ---- In Progress saves (localStorage) ----
-function loadInProgressSessions(): SavedSession[] {
-  try {
-    const raw = localStorage.getItem(IN_PROGRESS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
-
-function saveInProgressToStorage(sessions: SavedSession[]) {
-  localStorage.setItem(IN_PROGRESS_KEY, JSON.stringify(sessions));
-}
-
-function saveProgress() {
-  const data = serializeSession();
-  const sessions = loadInProgressSessions();
-  const roomName = state.room.name || selRoom;
-  const stageCount = state.stages.length;
-  const deployedCount = state.operators.filter(o => o.deployed).length;
-  const name = `${roomName} - ${deployedCount} ops, ${stageCount} stage${stageCount !== 1 ? 's' : ''}`;
-
-  sessions.push({
-    name,
-    data,
-    savedAt: Date.now(),
-  });
-  saveInProgressToStorage(sessions);
-  refreshInProgressUI();
-}
-
-function deleteInProgressSession(index: number) {
-  const sessions = loadInProgressSessions();
-  sessions.splice(index, 1);
-  saveInProgressToStorage(sessions);
-  refreshInProgressUI();
-}
 
 function resumeInProgressSession(data: SerializedSession) {
   restoreSession(data);
   show('game');
+}
+
+function deleteInProgressSession(index: number) {
+  _deleteInProgressSession(index);
+  refreshInProgressUI();
 }
 
 function refreshInProgressUI() {
@@ -1293,52 +1084,7 @@ function updateFloor() {
   }
 }
 
-/** Compute enclosed floor cells using ray-casting.
- *  For each grid cell, cast rays in 4 cardinal directions.
- *  A cell is "enclosed" if rays hit walls in at least 3 of 4 directions. */
-function computeFloorCells(walls: { a: Vec2; b: Vec2; doors: { pos: number; open: boolean }[] }[]): Vec2[] {
-  if (walls.length < 3) return [];
-  // Find bounding box of all walls
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const w of walls) {
-    x0 = Math.min(x0, w.a.x, w.b.x); y0 = Math.min(y0, w.a.y, w.b.y);
-    x1 = Math.max(x1, w.a.x, w.b.x); y1 = Math.max(y1, w.a.y, w.b.y);
-  }
-  // Expand slightly
-  x0 = snapGrid(x0) - GRID; y0 = snapGrid(y0) - GRID;
-  x1 = snapGrid(x1) + GRID; y1 = snapGrid(y1) + GRID;
-
-  const cells: Vec2[] = [];
-  const half = GRID / 2;
-
-  for (let cx = x0; cx < x1; cx += GRID) {
-    for (let cy = y0; cy < y1; cy += GRID) {
-      const px = cx + half, py = cy + half;
-      let dirs = 0;
-      // Cast rays in 4 directions from cell center, check if each hits a wall
-      if (rayHitsWall(px, py, 1, 0, walls)) dirs++;   // right
-      if (rayHitsWall(px, py, -1, 0, walls)) dirs++;  // left
-      if (rayHitsWall(px, py, 0, 1, walls)) dirs++;   // down
-      if (rayHitsWall(px, py, 0, -1, walls)) dirs++;  // up
-      if (dirs >= 3) cells.push({ x: cx, y: cy });
-    }
-  }
-  return cells;
-}
-
-/** Check if a ray from (ox,oy) in direction (dx,dy) hits any wall segment */
-function rayHitsWall(ox: number, oy: number, dx: number, dy: number, walls: { a: Vec2; b: Vec2 }[]): boolean {
-  for (const w of walls) {
-    // Ray-segment intersection
-    const ex = w.b.x - w.a.x, ey = w.b.y - w.a.y;
-    const denom = dx * ey - dy * ex;
-    if (Math.abs(denom) < 1e-10) continue;
-    const t = ((w.a.x - ox) * ey - (w.a.y - oy) * ex) / denom;
-    const u = ((w.a.x - ox) * dy - (w.a.y - oy) * dx) / denom;
-    if (t > 0.5 && u >= 0 && u <= 1) return true;
-  }
-  return false;
-}
+// computeFloorCells and rayHitsWall moved to game/helpers.ts
 
 // ---- Wall merging: merge collinear overlapping walls into one ----
 function mergeWalls() {
@@ -1602,12 +1348,13 @@ document.getElementById('build-import')!.onclick = () => {
   } catch { alert('Invalid room code'); }
 };
 
-function show(s: 'menu' | 'tut' | 'build' | 'game') {
-  const screens = {
+function show(s: 'menu' | 'tut' | 'build' | 'game' | 'lobby') {
+  const screens: Record<string, HTMLElement> = {
     menu: document.getElementById('menu-screen')!,
     tut: document.getElementById('tut-screen')!,
     build: document.getElementById('build-screen')!,
     game: document.getElementById('game-screen')!,
+    lobby: document.getElementById('lobby-screen')!,
   };
 
   // For each screen: if it's the target, make sure it's visible first then fade in
@@ -1635,10 +1382,15 @@ function show(s: 'menu' | 'tut' | 'build' | 'game') {
   if (s === 'build') {
     requestAnimationFrame(() => sizeBuildCanvas());
   }
+  if (s === 'lobby') {
+    refreshLobbyUI();
+  }
   // Clear session storage when intentionally going back to menu
   if (s === 'menu') {
     clearSessionStorage();
     refreshInProgressUI();
+    // Disconnect from any multiplayer session
+    if (netSync) { netSync.disconnect(); netSync = null; setNetSync(null); }
   }
   // Re-trigger entrance animation for menu-content when coming back to menu
   if (s === 'menu' || s === 'tut') {
@@ -2241,17 +1993,7 @@ function hitBtn(mouse: Vec2, x: number, y: number, w: number, h: number): boolea
   return mouse.x >= x && mouse.x <= x + w && mouse.y >= y && mouse.y <= y + h;
 }
 
-/** Bake pie target direction into operator startAngle so facing persists after pie is removed */
-function bakePieDirection(op: Operator) {
-  if (!op.pieTarget) return;
-  const pie = op.pieTarget;
-  // Set startAngle to face the pie target from the operator's current position
-  const dx = pie.x - op.position.x, dy = pie.y - op.position.y;
-  if (dx * dx + dy * dy > 1) {
-    op.angle = Math.atan2(dy, dx);
-    op.startAngle = op.angle;
-  }
-}
+// bakePieDirection moved to game/radialMenu.ts
 
 // ---- Radial Menu Definitions ----
 const RADIAL_R = 28; // radius of icon ring around center (world-space)
@@ -2492,7 +2234,7 @@ function handleInput() {
     else if (h === 'clear_level') { sfxDelete(); doClearLevel(); }
     else if (h === 'menu') { sfxBack(); show('menu'); }
     else if (h === 'replay') { sfxClick(); doReplay(); }
-    else if (h === 'save_progress') { sfxConfirm(); saveProgress(); showSaveConfirmation(); }
+    else if (h === 'save_progress') { sfxConfirm(); _saveProgress(state, selRoom, selOpCount); refreshInProgressUI(); showSaveConfirmation(); }
     else if (h === 'edit_stage') { sfxClick(); editStage(); }
     else if (h && h.startsWith('stage_')) {
       sfxTick();
@@ -3755,7 +3497,7 @@ if (savedSession) {
 // Auto-save session periodically while in game
 setInterval(() => {
   if (state.screen === 'game' && state.mode !== 'executing') {
-    saveSessionToStorage();
+    saveSessionToStorage(state, selRoom, selOpCount);
   }
 }, 5000);
 

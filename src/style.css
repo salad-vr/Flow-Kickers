@@ -56,7 +56,7 @@ body {
    SCREEN TRANSITIONS
    =================================== */
 
-#menu-screen, #tut-screen, #build-screen, #game-screen {
+#menu-screen, #tut-screen, #build-screen, #game-screen, #lobby-screen {
   transition: opacity 0.3s ease, transform 0.3s var(--ease-out-expo);
 }
 
@@ -69,7 +69,7 @@ body {
    MENU
    =================================== */
 
-#menu-screen, #tut-screen {
+#menu-screen, #tut-screen, #lobby-screen {
   display: flex;
   align-items: center;
   justify-content: center;
