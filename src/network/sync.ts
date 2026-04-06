@@ -105,6 +105,7 @@ export class NetworkSync {
 
   /** Called when local player drags an operator to deploy */
   sendOperatorClaim(opId: number, position: Vec2, angle: number, floor: number) {
+    console.log('[SYNC] sendOperatorClaim', opId, 'net?', !!this.net, 'mp?', !!this.state.multiplayer);
     if (!this.net || !this.state.multiplayer) return;
     const msg: OperatorClaimMsg = {
       type: 'op_claim',

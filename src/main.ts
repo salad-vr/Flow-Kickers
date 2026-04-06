@@ -1462,36 +1462,9 @@ window.addEventListener('keydown', (e) => {
 
   if (state.screen !== 'game') return;
 
-  // Share panel ESC handling (takes priority)
-  if (e.key === 'Escape' && state.sharePanel.open && !state.sharePanel.exporting) {
-    closeSharePanel();
-    e.preventDefault();
-    return;
-  }
-
-  switch (e.key) {
-    case ' ':
-      e.preventDefault();
-      if (state.mode === 'planning') doGo();
-      else if (state.mode === 'executing') { state.mode = 'paused'; }
-      else if (state.mode === 'paused') { state.mode = 'executing'; }
-      break;
-    case 'r': case 'R': doReset(); break;
-    case 'Escape':
-      state.popup = null;
-      state.radialMenu = null;
-      state.pendingNode = null;
-      state.speedSlider = null;
-      if (state.interaction.type === 'placing_pie') {
-        const inter = state.interaction;
-        const op = state.operators.find(o => o.id === inter.opId);
-        if (op) { bakePieDirection(op); op.pieTarget = null; }
-      }
-      if (state.interaction.type === 'placing_waypoints' || state.interaction.type === 'placing_pie' || state.interaction.type === 'speed_slider') state.interaction = { type: 'idle' };
-      state.selectedOpId = null;
-      break;
-    case 'Delete': case 'Backspace': deleteSelected(); break;
-  }
+  // Delegate to extracted game keyboard handler (has multiplayer sync)
+  const result = handleGameKeydown(e, state);
+  if (result === 'menu') show('menu');
 });
 
 /** Edit a previously saved stage: reset to its start, delete it and all future stages */
@@ -2932,7 +2905,7 @@ let prevOpFloors: Record<number, number> = {};
 
 function update(dt: number) {
   if (state.screen !== 'game') return;
-  handleInput();
+  _handleGameInput(state, canvas, selRoom, selOpCount);
   if (state.mode === 'executing') {
     // Snapshot floors before simulation step
     for (const op of state.operators) {

@@ -145,17 +145,22 @@ export class NetworkManager {
   }
 
   private setupConnection(conn: DataConnection) {
+    console.log('[PEER] setupConnection for', conn.peer, 'open?', conn.open);
+    
     conn.on('open', () => {
+      console.log('[PEER] Connection OPEN with', conn.peer, '| Total connections:', this.connections.size + 1);
       this.connections.set(conn.peer, conn);
       this.callback({ type: 'connected', peerId: conn.peer });
     });
 
     conn.on('data', (data) => {
       const msg = data as NetMessage;
+      console.log('[PEER] DATA from', conn.peer, ':', msg.type);
       this.callback({ type: 'message', peerId: conn.peer, data: msg });
 
       // Host relays messages to all other connected peers
       if (this._isHost) {
+        console.log('[PEER] Host relaying', msg.type, 'to', this.connections.size - 1, 'other peers');
         this.broadcast(msg, conn.peer);
       }
     });
@@ -177,6 +182,8 @@ export class NetworkManager {
     const conn = this.connections.get(peerId);
     if (conn && conn.open) {
       conn.send(msg);
+    } else {
+      console.warn('[PEER] send FAILED - no open connection for', peerId, '| connections:', Array.from(this.connections.keys()));
     }
   }
 
@@ -190,6 +197,7 @@ export class NetworkManager {
 
   /** Send to host (for clients) or broadcast (for host) */
   sendToAll(msg: NetMessage) {
+    console.log('[PEER] sendToAll:', msg.type, '| isHost:', this._isHost, '| connections:', this.connections.size);
     if (this._isHost) {
       this.broadcast(msg);
     } else {
