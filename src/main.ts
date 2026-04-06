@@ -2904,7 +2904,8 @@ window.addEventListener('mouseup', (e2) => {
 let prevOpFloors: Record<number, number> = {};
 
 function update(dt: number) {
-  if (state.screen !== 'game') return;
+  // Always clear input each frame to prevent stale clicks carrying across screens
+  if (state.screen !== 'game') { clearFrameInput(); return; }
   const inputResult = _handleGameInput(state, canvas, selRoom, selOpCount);
   if (inputResult === 'menu') { show('menu'); return; }
   if (state.mode === 'executing') {
