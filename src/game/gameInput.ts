@@ -258,7 +258,12 @@ export function handleInput(state: GameState, canvas: HTMLCanvasElement, selRoom
   if (inter.type === 'setting_look_target') {
     if (input.justPressed) {
       const op = state.operators.find(o => o.id === inter.opId);
-      if (op) { op.path.waypoints[inter.wpIdx].lookTarget = copy(worldMouse); op.path.waypoints[inter.wpIdx].facingOverride = null; }
+      if (op) {
+        op.path.waypoints[inter.wpIdx].lookTarget = copy(worldMouse);
+        op.path.waypoints[inter.wpIdx].facingOverride = null;
+        const sync = getNetSync();
+        if (sync) sync.sendLookTarget(op.id, inter.wpIdx, copy(worldMouse));
+      }
       state.interaction = { type: 'idle' };
     }
     return;
@@ -371,13 +376,52 @@ function handleHudButtonClick(state: GameState, canvas: HTMLCanvasElement, selRo
     }
     return true;
   }
-  if (h === 'save_stage') { sfxConfirm(); saveStage(state); state.stageJustCompleted = false; return true; }
-  if (h === 'reset') { sfxBack(); doReset(state); return true; }
-  if (h === 'clear_level') { sfxDelete(); doClearLevel(state); return true; }
+  if (h === 'save_stage') {
+    sfxConfirm();
+    const sync = getNetSync();
+    if (state.multiplayer && sync) {
+      // Multiplayer: broadcast save stage to all players
+      saveStage(state); state.stageJustCompleted = false;
+      sync.sendStageSave();
+    } else {
+      saveStage(state); state.stageJustCompleted = false;
+    }
+    return true;
+  }
+  if (h === 'reset') {
+    sfxBack();
+    const sync = getNetSync();
+    if (state.multiplayer && sync) { sync.sendReset(); }
+    doReset(state);
+    return true;
+  }
+  if (h === 'clear_level') {
+    sfxDelete();
+    // Block in multiplayer unless host
+    if (state.multiplayer && !state.multiplayer.isHost) return true;
+    const sync = getNetSync();
+    if (state.multiplayer && sync) { sync.sendClearLevel(); }
+    doClearLevel(state);
+    return true;
+  }
   if (h === 'menu') { sfxBack(); return true; } // caller handles show('menu')
-  if (h === 'replay') { sfxClick(); doReplay(state); return true; }
+  if (h === 'replay') {
+    sfxClick();
+    const sync = getNetSync();
+    if (state.multiplayer && sync) { sync.sendReplay(); }
+    doReplay(state);
+    return true;
+  }
   if (h === 'save_progress') { sfxConfirm(); saveProgress(state, selRoom, selOpCount); showSaveConfirmation(); return true; }
-  if (h === 'edit_stage') { sfxClick(); editStage(state); return true; }
+  if (h === 'edit_stage') {
+    sfxClick();
+    // Block in multiplayer unless host
+    if (state.multiplayer && !state.multiplayer.isHost) return true;
+    const sync = getNetSync();
+    if (state.multiplayer && sync) { sync.sendEditStage(state.viewingStageIndex); }
+    editStage(state);
+    return true;
+  }
   if (h.startsWith('stage_')) {
     sfxTick();
     const idx = parseInt(h.split('_')[1]);
@@ -423,6 +467,15 @@ function handleSpeedSliderInput(state: GameState, input: ReturnType<typeof getIn
   }
   if (input.justReleased) {
     slider.dragging = false;
+    // Sync final tempo value
+    const sync = getNetSync();
+    if (sync) {
+      const op = state.operators.find(o => o.id === inter.opId);
+      if (op) {
+        const tempo = inter.wpIdx !== null ? op.path.waypoints[inter.wpIdx]?.tempo : op.tempo;
+        if (tempo !== undefined) sync.sendTempoUpdate(op.id, inter.wpIdx, tempo);
+      }
+    }
   }
 }
 
@@ -516,6 +569,8 @@ function handlePendingNodeButtons(state: GameState, canvas: HTMLCanvasElement, i
   if (hitBtn(input.mousePos, cancelX, cancelY, btnSize, btnSize)) {
     op.path.waypoints.splice(pn.wpIdx, 1);
     rebuildPathLUT(op);
+    const sync = getNetSync();
+    if (sync) sync.sendWaypointDelete(op.id, pn.wpIdx);
     state.pendingNode = null;
     state.interaction = { type: 'idle' };
     return true;
@@ -629,7 +684,18 @@ function handleTempoRing(state: GameState, input: ReturnType<typeof getInput>, w
       if (target) target.tempo = tempo; else op.tempo = tempo;
     }
   }
-  if (input.justReleased) state.interaction = { type: 'idle' };
+  if (input.justReleased) {
+    // Sync tempo ring final value
+    const sync2 = getNetSync();
+    if (sync2) {
+      const op2 = state.operators.find(o => o.id === inter.opId);
+      if (op2) {
+        const t = inter.wpIdx !== null ? op2.path.waypoints[inter.wpIdx]?.tempo ?? 1 : op2.tempo;
+        sync2.sendTempoUpdate(op2.id, inter.wpIdx, t);
+      }
+    }
+    state.interaction = { type: 'idle' };
+  }
 }
 
 function handleSpinningDirection(state: GameState, input: ReturnType<typeof getInput>, worldMouse: Vec2) {
@@ -643,7 +709,11 @@ function handleSpinningDirection(state: GameState, input: ReturnType<typeof getI
       op.startAngle = op.angle;
     }
   }
-  if (input.justPressed) { state.interaction = { type: 'idle' }; return; }
+  if (input.justPressed) {
+    const sync = getNetSync();
+    if (sync && op) sync.sendFacingUpdate(op.id, null, op.angle);
+    state.interaction = { type: 'idle' }; return;
+  }
   if (input.rightJustPressed) { state.interaction = { type: 'idle' }; return; }
 }
 
@@ -658,11 +728,17 @@ function handlePlacingPie(state: GameState, input: ReturnType<typeof getInput>, 
       op.angle = Math.atan2(dy, dx);
       op.startAngle = op.angle;
     }
+    const sync = getNetSync();
+    if (sync) sync.sendPieUpdate(op.id, op.pieTarget, op.angle);
     state.interaction = { type: 'idle' };
     return;
   }
   if (input.rightJustPressed) {
-    if (op) { bakePieDirection(op); op.pieTarget = null; }
+    if (op) {
+      bakePieDirection(op); op.pieTarget = null;
+      const sync = getNetSync();
+      if (sync) sync.sendPieUpdate(op.id, null, op.angle);
+    }
     state.interaction = { type: 'idle' };
     return;
   }
@@ -729,8 +805,11 @@ function handleIdleLeftClick(state: GameState, canvas: HTMLCanvasElement, input:
         const wc = selOp.path.waypoints.length;
         const frac = bestI / (lut.samples.length - 1);
         const insertAfter = Math.min(Math.floor(frac * (wc - 1)), wc - 2);
-        selOp.path.waypoints.splice(insertAfter + 1, 0, makeWaypoint(cp, state.activeFloor));
+        const insertedWp = makeWaypoint(cp, state.activeFloor);
+        selOp.path.waypoints.splice(insertAfter + 1, 0, insertedWp);
         rebuildPathLUT(selOp);
+        const sync = getNetSync();
+        if (sync) sync.sendWaypointAdd(selOp.id, insertAfter + 1, insertedWp);
         state.interaction = { type: 'dragging_node', opId: selOp.id, wpIdx: insertAfter + 1 };
         return;
       }
@@ -789,7 +868,12 @@ export function handleGameKeydown(e: KeyboardEvent, state: GameState): 'menu' | 
         }
       }
       break;
-    case 'r': case 'R': doReset(state); break;
+    case 'r': case 'R': {
+      const sync = getNetSync();
+      if (state.multiplayer && sync) { sync.sendReset(); }
+      doReset(state);
+      break;
+    }
     case 'Escape':
       state.popup = null;
       state.radialMenu = null;
@@ -798,12 +882,27 @@ export function handleGameKeydown(e: KeyboardEvent, state: GameState): 'menu' | 
       if (state.interaction.type === 'placing_pie') {
         const inter = state.interaction;
         const op = state.operators.find(o => o.id === inter.opId);
-        if (op) { bakePieDirection(op); op.pieTarget = null; }
+        if (op) {
+          bakePieDirection(op); op.pieTarget = null;
+          const sync = getNetSync();
+          if (sync) sync.sendPieUpdate(op.id, null, op.angle);
+        }
       }
       if (state.interaction.type === 'placing_waypoints' || state.interaction.type === 'placing_pie' || state.interaction.type === 'speed_slider') state.interaction = { type: 'idle' };
       state.selectedOpId = null;
       break;
-    case 'Delete': case 'Backspace': deleteSelected(state); break;
+    case 'Delete': case 'Backspace': {
+      // Sync waypoint delete
+      if (state.popup && state.popup.wpIdx >= 0) {
+        const sync = getNetSync();
+        const op = state.operators.find(o => o.id === state.popup!.opId);
+        if (sync && op && op.path.waypoints.length > 2) {
+          sync.sendWaypointDelete(op.id, state.popup!.wpIdx);
+        }
+      }
+      deleteSelected(state);
+      break;
+    }
   }
   return null;
 }

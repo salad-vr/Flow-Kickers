@@ -3,6 +3,7 @@ import { DOOR_W, makeWaypoint } from '../types';
 import type { Vec2 } from '../math/vec2';
 import { distance, copy } from '../math/vec2';
 import { rebuildPathLUT } from '../operator/pathFollower';
+import { getNetSync } from '../network/index';
 
 // ---- Radial Menu Definitions ----
 export const RADIAL_R = 28; // radius of icon ring around center (world-space)
@@ -93,6 +94,7 @@ export function handleRadialItemAction(
   state: GameState,
   canvas: HTMLCanvasElement,
 ): void {
+  const sync = getNetSync();
   if (menu.wpIdx < 0) {
     // Operator radial menu actions
     if (item.id === 'direction') {
@@ -101,6 +103,7 @@ export function handleRadialItemAction(
       if (op.pieTarget) {
         bakePieDirection(op);
         op.pieTarget = null;
+        if (sync) sync.sendPieUpdate(op.id, null, op.angle);
         state.interaction = { type: 'idle' };
       } else {
         state.interaction = { type: 'placing_pie', opId: op.id };
@@ -109,6 +112,7 @@ export function handleRadialItemAction(
       if (op.path.waypoints.length === 0) {
         op.path.waypoints = [makeWaypoint(op.position, op.currentFloor)];
         op.path.splineLUT = null;
+        if (sync) sync.sendRouteStart(op.id);
       }
       state.interaction = { type: 'placing_waypoints', opId: op.id };
     } else if (item.id === 'speed') {
@@ -128,6 +132,7 @@ export function handleRadialItemAction(
       if (op.path.waypoints.length > 2) {
         op.path.waypoints.splice(menu.wpIdx, 1);
         rebuildPathLUT(op);
+        if (sync) sync.sendWaypointDelete(op.id, menu.wpIdx);
       }
     } else if (item.id === 'speed') {
       const cam2 = state.camera;
@@ -137,6 +142,7 @@ export function handleRadialItemAction(
     } else if (item.id === 'hold') {
       wp.hold = !wp.hold;
       if (wp.hold && !wp.goCode) wp.goCode = 'A';
+      if (sync) sync.sendHoldToggle(op.id, menu.wpIdx, wp.hold, wp.goCode);
     } else if (item.id === 'door') {
       if (wp.openDoors && wp.openDoors.length > 0) {
         wp.openDoors = [];
@@ -144,6 +150,7 @@ export function handleRadialItemAction(
         const nearDoors = findDoorsNear(wp.position, DOOR_W * 2, state);
         wp.openDoors = nearDoors.map(nd => ({ wallIdx: nd.wallIdx, doorIdx: nd.doorIdx }));
       }
+      if (sync) sync.sendDoorAction(op.id, menu.wpIdx, wp.openDoors);
     }
   }
 }

@@ -14,11 +14,12 @@ import type {
   RouteStartMsg, ReadyMsg, UnreadyMsg,
   StageExecuteMsg, StageSaveMsg,
   FullStateMsg, PlayerInfoMsg, PlayerJoinMsg,
+  ResetMsg, ClearLevelMsg, ReplayMsg, EditStageMsg,
 } from './types';
 import { createMultiplayerState, PLAYER_COLORS } from './types';
 import { NetworkManager, type ConnectionEvent } from './peer';
 import { rebuildPathLUT } from '../operator/pathFollower';
-import { doGo, loadAndExecuteStage, saveStage } from '../game/actions';
+import { doGo, doReset, doReplay, doClearLevel, editStage, loadAndExecuteStage, saveStage } from '../game/actions';
 import { serializeSession, restoreSession } from '../game/persistence';
 import { makeWaypoint } from '../types';
 
@@ -363,6 +364,10 @@ export class NetworkSync {
       case 'unready': this.onUnready(msg); break;
       case 'stage_execute': this.onStageExecute(msg); break;
       case 'stage_save': this.onStageSave(msg); break;
+      case 'reset': this.onRemoteReset(); break;
+      case 'clear_level': this.onRemoteClearLevel(); break;
+      case 'replay': this.onRemoteReplay(); break;
+      case 'edit_stage': this.onRemoteEditStage((msg as EditStageMsg).stageIndex); break;
     }
   }
 
@@ -710,9 +715,56 @@ export class NetworkSync {
     const msg: StageSaveMsg = {
       type: 'stage_save',
       senderId: this.localPlayerId,
-      stageData: null, // saveStage modifies state in place, all clients run it
+      stageData: null,
     };
     this.net.sendToAll(msg);
+  }
+
+  sendReset() {
+    if (!this.net || !this.state.multiplayer) return;
+    const msg: ResetMsg = { type: 'reset', senderId: this.localPlayerId };
+    this.net.sendToAll(msg);
+  }
+
+  sendClearLevel() {
+    if (!this.net || !this.state.multiplayer) return;
+    const msg: ClearLevelMsg = { type: 'clear_level', senderId: this.localPlayerId };
+    this.net.sendToAll(msg);
+  }
+
+  sendReplay() {
+    if (!this.net || !this.state.multiplayer) return;
+    const msg: ReplayMsg = { type: 'replay', senderId: this.localPlayerId };
+    this.net.sendToAll(msg);
+  }
+
+  sendEditStage(stageIndex: number) {
+    if (!this.net || !this.state.multiplayer) return;
+    const msg: EditStageMsg = { type: 'edit_stage', senderId: this.localPlayerId, stageIndex };
+    this.net.sendToAll(msg);
+  }
+
+  // ---- Receive handlers for new message types ----
+
+  private onRemoteReset() {
+    doReset(this.state);
+    this.onUIUpdate();
+  }
+
+  private onRemoteClearLevel() {
+    doClearLevel(this.state);
+    this.onUIUpdate();
+  }
+
+  private onRemoteReplay() {
+    doReplay(this.state);
+    this.onUIUpdate();
+  }
+
+  private onRemoteEditStage(stageIndex: number) {
+    this.state.viewingStageIndex = stageIndex;
+    editStage(this.state);
+    this.onUIUpdate();
   }
 
   /** Host starts the game (transitions from lobby to in_game) */

@@ -77,6 +77,10 @@ export type NetMessage =
   | UnreadyMsg
   | StageExecuteMsg
   | StageSaveMsg
+  | ResetMsg
+  | ClearLevelMsg
+  | ReplayMsg
+  | EditStageMsg
   | ChatMsg;
 
 // ---- Connection / Lobby ----
@@ -251,6 +255,27 @@ export interface StageSaveMsg {
   type: 'stage_save';
   senderId: string;
   stageData: any; // Stage serialized
+}
+
+export interface ResetMsg {
+  type: 'reset';
+  senderId: string;
+}
+
+export interface ClearLevelMsg {
+  type: 'clear_level';
+  senderId: string;
+}
+
+export interface ReplayMsg {
+  type: 'replay';
+  senderId: string;
+}
+
+export interface EditStageMsg {
+  type: 'edit_stage';
+  senderId: string;
+  stageIndex: number;
 }
 
 export interface ChatMsg {
