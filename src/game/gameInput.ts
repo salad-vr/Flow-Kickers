@@ -33,6 +33,15 @@ function isOtherPlayersOp(state: GameState, opId: number): boolean {
   return !sync.isOwnedByLocal(opId) && !sync.isUnclaimed(opId);
 }
 
+/** Throttle live network sends to ~15Hz to avoid flooding */
+let lastLiveSendTime = 0;
+function shouldSendLive(): boolean {
+  const now = performance.now();
+  if (now - lastLiveSendTime < 66) return false; // ~15fps
+  lastLiveSendTime = now;
+  return true;
+}
+
 /** Visual confirmation overlay for save progress */
 export let saveConfirmTimer = 0;
 export function showSaveConfirmation() {
@@ -532,13 +541,18 @@ function handleMovingOp(state: GameState, input: ReturnType<typeof getInput>, wo
       op.path.waypoints[0].position = copy(worldMouse);
       rebuildPathLUT(op);
     }
+    // Multiplayer: send position updates live during drag (throttled to ~15Hz)
+    if (shouldSendLive()) {
+      const sync = getNetSync();
+      if (sync) sync.sendOperatorMove(op.id, op.position, op.angle);
+    }
   }
   if (input.justReleased) {
     if (!input.isDragging && op) {
       state.radialMenu = { center: copy(op.position), opId: op.id, wpIdx: -1, hoveredIdx: -1, animT: 0 };
     }
-    // Multiplayer: send final operator position
-    if (op && input.isDragging) {
+    // Multiplayer: always send final position on release (catches small moves too)
+    if (op) {
       const sync = getNetSync();
       if (sync) sync.sendOperatorMove(op.id, op.position, op.angle);
     }
@@ -655,6 +669,11 @@ function handleDraggingNode(state: GameState, input: ReturnType<typeof getInput>
       op.path.waypoints[inter.wpIdx].position = copy(worldMouse);
     }
     rebuildPathLUT(op);
+    // Multiplayer: send live position during drag (throttled to ~15Hz)
+    if (shouldSendLive()) {
+      const sync = getNetSync();
+      if (sync) sync.sendWaypointMove(op.id, inter.wpIdx, op.path.waypoints[inter.wpIdx].position);
+    }
   }
   if (input.justReleased) {
     if (!input.isDragging && op) {
@@ -662,8 +681,8 @@ function handleDraggingNode(state: GameState, input: ReturnType<typeof getInput>
         state.radialMenu = { center: copy(op.path.waypoints[inter.wpIdx].position), opId: op.id, wpIdx: inter.wpIdx, hoveredIdx: -1, animT: 0 };
       }
     }
-    // Multiplayer: send waypoint move
-    if (op && input.isDragging) {
+    // Multiplayer: send final position on release
+    if (op) {
       const sync = getNetSync();
       if (sync) sync.sendWaypointMove(op.id, inter.wpIdx, op.path.waypoints[inter.wpIdx].position);
     }

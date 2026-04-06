@@ -543,7 +543,9 @@ export class NetworkSync {
     if (op) {
       op.position = { x: msg.position.x, y: msg.position.y };
       op.startPosition = { x: msg.position.x, y: msg.position.y };
+      op.smoothPosition = { x: msg.position.x, y: msg.position.y };
       op.angle = msg.angle;
+      op.startAngle = msg.angle;
       if (op.path.waypoints.length > 0) {
         op.path.waypoints[0].position = { x: msg.position.x, y: msg.position.y };
         rebuildPathLUT(op);
