@@ -338,6 +338,8 @@ export class NetworkSync {
 
     // Don't apply our own messages (they were already applied locally)
     if (msg.senderId === this.localPlayerId) return;
+    
+    console.log('[MP] Received:', msg.type, 'from', msg.senderId.substring(0, 12));
 
     switch (msg.type) {
       case 'player_join': this.onPlayerJoin(msg); break;
@@ -473,12 +475,28 @@ export class NetworkSync {
   }
 
   private onFullState(msg: FullStateMsg) {
+    // Save multiplayer state before restoreSession (it doesn't touch mp, but be safe)
     const mp = this.state.multiplayer!;
+    const savedMp = { ...mp, players: [...mp.players] };
+    
+    console.log('[MP] Received full_state from host, restoring game...');
+    console.log('[MP] Room data operators:', msg.roomData?.operators?.length, 'walls:', msg.roomData?.room?.w?.length);
+    
     // Restore the full game state from host
     restoreSession(this.state, msg.roomData);
-    mp.operatorOwnership = msg.ownership;
-    mp.readyPlayers = msg.readyPlayers;
-    mp.status = 'in_game';
+    
+    // Re-attach multiplayer state (restoreSession doesn't know about it)
+    this.state.multiplayer = savedMp;
+    this.state.multiplayer.operatorOwnership = msg.ownership;
+    this.state.multiplayer.readyPlayers = msg.readyPlayers;
+    this.state.multiplayer.status = 'in_game';
+    
+    // Ensure game is in planning mode
+    this.state.screen = 'game';
+    this.state.mode = 'planning';
+    
+    console.log('[MP] State restored. Operators:', this.state.operators.length, 'Room:', this.state.room.name);
+    
     this.onStartGame();
     this.onUIUpdate();
   }
@@ -488,6 +506,7 @@ export class NetworkSync {
   private onOperatorClaim(msg: OperatorClaimMsg) {
     const mp = this.state.multiplayer!;
     mp.operatorOwnership[msg.opId] = msg.senderId;
+    console.log('[MP] Operator', msg.opId, 'claimed by', msg.senderId);
     const op = this.state.operators.find(o => o.id === msg.opId);
     if (op) {
       op.deployed = true;

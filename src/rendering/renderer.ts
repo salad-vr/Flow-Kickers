@@ -1051,6 +1051,18 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
   }
 
   // ---- Right group: SAVE STAGE | GO! | RESET | REPLAY ----
+  // Dynamically position right group to avoid overlap with center stage pills
+  let rg = rightBlockX; // default
+  if (totalStages > 0) {
+    const pillW2 = 28, pillGap2 = 5;
+    const viewIdx2 = state.viewingStageIndex;
+    const hasSel2 = viewIdx2 >= 0 && viewIdx2 < totalStages && mode === 'planning';
+    const tp2 = totalStages + (mode === 'planning' ? 1 : 0);
+    const tw2 = tp2 * (pillW2 + pillGap2) - pillGap2 + (hasSel2 ? 48 + pillGap2 + 6 : 0);
+    const pillsRight = W / 2 + tw2 / 2 + 12;
+    rg = Math.max(rightBlockX, pillsRight + 8);
+  }
+
   const saveLabel = totalStages === 0 ? 'SAVE STAGE' : `SAVE ${totalStages + 1}`;
   const saveGlow = state.stageJustCompleted;
   if (mode === 'planning' || saveGlow) {
@@ -1059,42 +1071,41 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
       ctx.shadowColor = '#f2ecda';
       ctx.shadowBlur = 14 * pulse;
     }
-    drawHudBtn(ctx, rightBlockX, by, 100, btnH, saveLabel, saveGlow ? '#f2ecda' : C.accent, hov === 'save_stage', 'save_stage');
+    drawHudBtn(ctx, rg, by, 100, btnH, saveLabel, saveGlow ? '#f2ecda' : C.accent, hov === 'save_stage', 'save_stage');
     ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
   }
 
   // Divider before GO
   ctx.fillStyle = 'rgba(30,51,82,0.6)';
-  ctx.fillRect(rightBlockX + 106, by + 4, 1, btnH - 8);
+  ctx.fillRect(rg + 106, by + 4, 1, btnH - 8);
 
   // GO / PAUSE / RESUME / READY - primary action, visually distinct
   if (mode === 'planning' && state.multiplayer) {
-    // Multiplayer: show READY/UNREADY
     const mp = state.multiplayer;
     const isReady = mp.readyPlayers.includes(mp.localPlayerId);
     const readyCount = mp.readyPlayers.length;
     const totalPlayers = mp.players.filter(p => p.connected).length;
     const label = isReady ? `READY ${readyCount}/${totalPlayers}` : `READY?`;
     if (isReady) {
-      drawHudBtn(ctx, rightBlockX + 113, by, 68, btnH, label, '#55aa66', hov === 'go', 'go');
+      drawHudBtn(ctx, rg + 113, by, 68, btnH, label, '#55aa66', hov === 'go', 'go');
     } else {
-      drawHudBtnPrimary(ctx, rightBlockX + 113, by - 1, 68, btnH + 2, label, hov === 'go');
+      drawHudBtnPrimary(ctx, rg + 113, by - 1, 68, btnH + 2, label, hov === 'go');
     }
   } else if (mode === 'planning') {
-    drawHudBtnPrimary(ctx, rightBlockX + 113, by - 1, 68, btnH + 2, 'GO!', hov === 'go');
+    drawHudBtnPrimary(ctx, rg + 113, by - 1, 68, btnH + 2, 'GO!', hov === 'go');
   } else if (mode === 'executing') {
-    drawHudBtn(ctx, rightBlockX + 113, by, 68, btnH, 'PAUSE', C.hudText, hov === 'go', 'go');
+    drawHudBtn(ctx, rg + 113, by, 68, btnH, 'PAUSE', C.hudText, hov === 'go', 'go');
   } else {
-    drawHudBtnPrimary(ctx, rightBlockX + 113, by - 1, 68, btnH + 2, 'RESUME', hov === 'go');
+    drawHudBtnPrimary(ctx, rg + 113, by - 1, 68, btnH + 2, 'RESUME', hov === 'go');
   }
 
   ctx.fillStyle = 'rgba(30,51,82,0.6)';
-  ctx.fillRect(rightBlockX + 187, by + 4, 1, btnH - 8);
+  ctx.fillRect(rg + 187, by + 4, 1, btnH - 8);
 
-  drawHudBtn(ctx, rightBlockX + 194, by, 54, btnH, 'RESET', C.hudText, hov === 'reset', 'reset');
+  drawHudBtn(ctx, rg + 194, by, 54, btnH, 'RESET', C.hudText, hov === 'reset', 'reset');
 
   if (totalStages > 0) {
-    drawHudBtn(ctx, rightBlockX + 254, by, 60, btnH, 'REPLAY', C.accent, hov === 'replay', 'replay');
+    drawHudBtn(ctx, rg + 254, by, 60, btnH, 'REPLAY', C.accent, hov === 'replay', 'replay');
   }
 
   // ---- Timer (right edge) ----
@@ -1115,31 +1126,9 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: 
   // ---- Top-left: Logo ----
   drawLogo(ctx);
 
-  // ---- Multiplayer indicators ----
+  // ---- Multiplayer notifications (top center, fading) ----
   if (state.multiplayer) {
     const mp = state.multiplayer;
-    const playerColors = ['#5588cc', '#cc7744', '#55aa66', '#aa55aa'];
-    // Player color dots (top-left, below logo)
-    const dotY = 55;
-    for (let i = 0; i < mp.players.length; i++) {
-      const p = mp.players[i];
-      const dotX = 14 + i * 22;
-      ctx.globalAlpha = p.connected ? 0.9 : 0.3;
-      ctx.fillStyle = playerColors[p.colorIndex] || '#888';
-      ctx.beginPath(); ctx.arc(dotX, dotY, 6, 0, Math.PI * 2); ctx.fill();
-      // Ready checkmark
-      if (mp.readyPlayers.includes(p.id)) {
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(dotX - 3, dotY); ctx.lineTo(dotX - 1, dotY + 2); ctx.lineTo(dotX + 3, dotY - 2); ctx.stroke();
-      }
-      ctx.globalAlpha = p.connected ? 0.5 : 0.2;
-      ctx.fillStyle = '#e8dfc6';
-      ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-      ctx.fillText(p.name.substring(0, 6), dotX, dotY + 9);
-    }
-    ctx.globalAlpha = 1;
-
-    // Notifications (top center, fading)
     const now = Date.now();
     for (let i = 0; i < mp.notifications.length; i++) {
       const n = mp.notifications[i];

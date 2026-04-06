@@ -118,17 +118,28 @@ export function handleInput(state: GameState, canvas: HTMLCanvasElement, selRoom
   const btnY = hudBarY + 9;
   const btnH = 26;
   const rightBlockX = W / 2 + 20;
+  // Dynamic right group position (must match renderer logic)
+  const totalStages = state.stages.length;
+  let rg = rightBlockX;
+  if (totalStages > 0) {
+    const pillW = 28, pillGap = 5, editBtnW = 48;
+    const viewIdx = state.viewingStageIndex;
+    const hasSelection = viewIdx >= 0 && viewIdx < totalStages && state.mode === 'planning';
+    const totalPills = totalStages + (state.mode === 'planning' ? 1 : 0);
+    const totalW = totalPills * (pillW + pillGap) - pillGap + (hasSelection ? editBtnW + pillGap + 6 : 0);
+    const pillsRight = W / 2 + totalW / 2 + 12;
+    rg = Math.max(rightBlockX, pillsRight + 8);
+  }
   const hudBtns: Record<string, { x: number; y: number; w: number; h: number }> = {
     clear_level: { x: 10, y: btnY, w: 54, h: btnH },
     menu: { x: 77, y: btnY, w: 50, h: btnH },
     save_progress: { x: 140, y: btnY, w: 48, h: btnH },
-    save_stage: { x: rightBlockX, y: btnY, w: 100, h: btnH },
-    go: { x: rightBlockX + 113, y: btnY - 1, w: 68, h: btnH + 2 },
-    reset: { x: rightBlockX + 194, y: btnY, w: 54, h: btnH },
-    replay: { x: rightBlockX + 254, y: btnY, w: 60, h: btnH },
+    save_stage: { x: rg, y: btnY, w: 100, h: btnH },
+    go: { x: rg + 113, y: btnY - 1, w: 68, h: btnH + 2 },
+    reset: { x: rg + 194, y: btnY, w: 54, h: btnH },
+    replay: { x: rg + 254, y: btnY, w: 60, h: btnH },
   };
   // Dynamic stage pill buttons
-  const totalStages = state.stages.length;
   if (totalStages > 0) {
     const pillW = 28, pillH = 22, pillGap = 5;
     const editBtnW = 48;
