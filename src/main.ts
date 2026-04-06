@@ -2905,7 +2905,8 @@ let prevOpFloors: Record<number, number> = {};
 
 function update(dt: number) {
   if (state.screen !== 'game') return;
-  _handleGameInput(state, canvas, selRoom, selOpCount);
+  const inputResult = _handleGameInput(state, canvas, selRoom, selOpCount);
+  if (inputResult === 'menu') { show('menu'); return; }
   if (state.mode === 'executing') {
     // Snapshot floors before simulation step
     for (const op of state.operators) {

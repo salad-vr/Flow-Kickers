@@ -97,8 +97,9 @@ export function handleCamera(state: GameState, canvas: HTMLCanvasElement) {
 /**
  * Main game input handler. Call once per frame.
  * `selRoom` and `selOpCount` are passed so saveProgress can serialize them.
+ * Returns 'menu' if the user clicked the MENU button, so main.ts can navigate.
  */
-export function handleInput(state: GameState, canvas: HTMLCanvasElement, selRoom: string, selOpCount: number) {
+export function handleInput(state: GameState, canvas: HTMLCanvasElement, selRoom: string, selOpCount: number): 'menu' | void {
   const input = getInput();
   if (state.screen !== 'game') return;
 
@@ -204,7 +205,9 @@ export function handleInput(state: GameState, canvas: HTMLCanvasElement, selRoom
 
   // HUD bar button clicks work in ALL modes
   if (input.justPressed && input.mousePos.y > hudBarY) {
-    if (handleHudButtonClick(state, canvas, selRoom, selOpCount)) return;
+    const hudResult = handleHudButtonClick(state, canvas, selRoom, selOpCount);
+    if (hudResult === 'menu') return 'menu';
+    if (hudResult) return;
   }
 
   if (state.mode === 'executing') return;
@@ -361,8 +364,8 @@ function handleSharePanelInput(state: GameState, canvas: HTMLCanvasElement, inpu
   }
 }
 
-/** Returns true if a HUD button was clicked (consumed the input) */
-function handleHudButtonClick(state: GameState, canvas: HTMLCanvasElement, selRoom: string, selOpCount: number): boolean {
+/** Returns true if a HUD button was clicked (consumed the input), or 'menu' if menu was clicked */
+function handleHudButtonClick(state: GameState, canvas: HTMLCanvasElement, selRoom: string, selOpCount: number): boolean | 'menu' {
   const h = state.hoveredHudBtn;
   if (!h) return false;
 
@@ -413,7 +416,7 @@ function handleHudButtonClick(state: GameState, canvas: HTMLCanvasElement, selRo
     doClearLevel(state);
     return true;
   }
-  if (h === 'menu') { sfxBack(); return true; } // caller handles show('menu')
+  if (h === 'menu') { sfxBack(); return 'menu'; }
   if (h === 'replay') {
     sfxClick();
     const sync = getNetSync();
